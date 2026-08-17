@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "collaboration-day-next",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "collaborationday2026.web.id",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/archive*",
+      "/media/gallery/*"
+    ]
+  },
+  "images": {
+    "binding": "IMAGES"
+  },
+  "vars": {
+    "APP_ORIGIN": "https://collaborationday2026.web.id",
+    "BREVO_SENDER_EMAIL": "no-reply@collaborationday2026.web.id",
+    "BREVO_SENDER_NAME": "Collaboration Day 2026",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAEQ3o1KIOtWQyRa6",
+    "ADMIN_EMAILS": "arifianilhamnur@gmail.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "collaboration-day-next",
+      "database_id": "e5c6a8f9-ddf7-4b28-a183-8df7e8a11eef",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PROOFS",
+      "bucket_name": "collaboration-day-payment-proofs"
+    }
+  ]
+}

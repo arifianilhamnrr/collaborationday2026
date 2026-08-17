@@ -1,0 +1,9 @@
+VENDOR_SHARED_SECRET=replace-with-an-independent-long-random-secret
+TOKEN_PEPPER=replace-with-an-independent-long-random-secret
+BREVO_API_KEY=replace-with-brevo-api-key
+BREVO_SENDER_EMAIL=no-reply@collaborationday2026.web.id
+BREVO_SENDER_NAME=Collaboration Day 2026
+ADMIN_EMAILS=admin@example.com
+WHATSAPP_API_KEY=replace-after-whatsapp-api-is-ready
+TURNSTILE_SECRET_KEY=replace-with-turnstile-secret
+TURNSTILE_SITE_KEY=replace-with-turnstile-site-key
