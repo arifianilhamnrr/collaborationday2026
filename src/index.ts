@@ -385,7 +385,7 @@ app.post('/dashboard/pendamping/group', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.parseBody();
   const inviteUrl = String(body.whatsapp_invite_url ?? '').trim();
-  if (user.role !== 'pendamping' || !csrfValid(c, body.csrf_token) || !/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_-]{10,}$/.test(inviteUrl)) return c.text('Tautan grup WhatsApp tidak valid.', 400);
+  if (user.role !== 'pendamping' || !csrfValid(c, body.csrf_token) || (inviteUrl !== '' && !/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_/?=&-]{10,}$/.test(inviteUrl))) return c.text('Tautan grup WhatsApp tidak valid.', 400);
   const staff = await c.env.DB.prepare('SELECT whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ whatsapp_verified_at: string | null }>();
   if (!staff?.whatsapp_verified_at) return c.text('Verifikasi nomor WhatsApp terlebih dahulu.', 403);
   const result = await c.env.DB.prepare(`UPDATE participant_groups SET whatsapp_invite_url=?,updated_at=CURRENT_TIMESTAMP WHERE pendamping_user_id=? AND edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)`).bind(inviteUrl, user.id).run();
