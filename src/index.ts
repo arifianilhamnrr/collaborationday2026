@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
 import { sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
-import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, whatsappOtpCooldown, whatsappSenderCandidates, type ProofContentType } from './domain';
+import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
 import { qrisWithAmount } from './qris';
 import { rateLimit, verifyTurnstile } from './security';
@@ -20,7 +20,7 @@ async function autoAssignParticipantGroup(db: D1Database, participantId: number)
     SELECT pg.id,pg.edition_id,p.id
     FROM participants p
     JOIN participant_groups pg ON pg.edition_id=?
-    WHERE p.id=? AND p.gender IN ('male','female') AND p.whatsapp_verified_at IS NOT NULL
+    WHERE p.id=? AND p.gender IN ('male','female') AND p.phone IS NOT NULL AND p.phone!=''
       AND NOT EXISTS (SELECT 1 FROM participant_group_memberships existing WHERE existing.edition_id=? AND existing.participant_id=p.id)
     ORDER BY
       (SELECT COUNT(*) FROM participant_group_memberships same_gender JOIN participants member ON member.id=same_gender.participant_id WHERE same_gender.group_id=pg.id AND member.gender=p.gender),
@@ -194,7 +194,7 @@ app.get('/dashboard', async (c) => {
     (SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' LIMIT 1) AS group_name,
     (SELECT pg.whatsapp_invite_url FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' LIMIT 1) AS group_whatsapp_url
     FROM participants p WHERE p.user_id=?`).bind(user.id).first<Profile>();
-  if (profile?.gender && profile.whatsapp_verified_at && !profile.group_name) {
+  if (profile?.gender && profile.phone && !profile.group_name) {
     await autoAssignParticipantGroup(c.env.DB, profile.id);
     profile = await c.env.DB.prepare(`SELECT p.*,
       (SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' ORDER BY e.year DESC LIMIT 1) AS group_name,
@@ -251,7 +251,7 @@ app.post('/dashboard/account', async (c) => {
     const rawPhone = String(body.phone ?? '').trim();
     const phone = rawPhone ? normalizeIndonesianPhone(rawPhone) : null;
     if ((user.role === 'pendamping' && !phone) || (rawPhone && !phone)) return c.text('Nomor WhatsApp tidak valid.', 400);
-    statements.push(c.env.DB.prepare(`UPDATE staff_profiles SET full_name=?,phone_e164=?,whatsapp_verified_at=CASE WHEN COALESCE(phone_e164,'')=COALESCE(?,'') THEN whatsapp_verified_at ELSE NULL END,updated_at=CURRENT_TIMESTAMP WHERE user_id=?`).bind(displayName, phone, phone, user.id));
+    statements.push(c.env.DB.prepare(`UPDATE staff_profiles SET full_name=?,phone_e164=?,whatsapp_verified_at=CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,updated_at=CURRENT_TIMESTAMP WHERE user_id=?`).bind(displayName, phone, phone, user.id));
   }
   statements.push(c.env.DB.prepare("INSERT INTO audit_logs (actor_user_id,action,subject_type,subject_id) VALUES (?,'account.profile_updated','user',?)").bind(user.id, String(user.id)));
   try {
@@ -260,7 +260,7 @@ app.post('/dashboard/account', async (c) => {
     if (String(error).includes('UNIQUE')) return c.text('Nomor WhatsApp sudah digunakan akun lain.', 409);
     throw error;
   }
-  return redirectMessage(c, user.role === 'pendamping' ? 'Profil disimpan. Verifikasi ulang diperlukan jika nomor WhatsApp berubah.' : 'Profil berhasil diperbarui.');
+  return redirectMessage(c, 'Profil berhasil diperbarui.');
 });
 
 app.post('/dashboard/account/password', async (c) => {
@@ -371,14 +371,14 @@ app.post('/dashboard/pendamping/profile', async (c) => {
   if (user.role !== 'pendamping' || !user.email_verified_at || !csrfValid(c, body.csrf_token) || fullName.length < 2 || fullName.length > 100 || !phone) return c.text('Profil pendamping tidak valid.', 400);
   try {
     await c.env.DB.batch([
-      c.env.DB.prepare(`INSERT INTO staff_profiles (user_id,role,full_name,phone_e164) VALUES (?,'pendamping',?,?) ON CONFLICT(user_id) DO UPDATE SET full_name=excluded.full_name,phone_e164=excluded.phone_e164,whatsapp_verified_at=CASE WHEN staff_profiles.phone_e164=excluded.phone_e164 THEN staff_profiles.whatsapp_verified_at ELSE NULL END,updated_at=CURRENT_TIMESTAMP`).bind(user.id, fullName, phone),
+      c.env.DB.prepare(`INSERT INTO staff_profiles (user_id,role,full_name,phone_e164,whatsapp_verified_at) VALUES (?,'pendamping',?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET full_name=excluded.full_name,phone_e164=excluded.phone_e164,whatsapp_verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP`).bind(user.id, fullName, phone),
       c.env.DB.prepare('UPDATE users SET display_name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(fullName, user.id),
     ]);
   } catch (error) {
     if (String(error).includes('UNIQUE')) return c.text('Nomor WhatsApp sudah digunakan akun lain.', 409);
     throw error;
   }
-  return redirectMessage(c, 'Profil pendamping disimpan. Silakan verifikasi nomor WhatsApp.');
+  return redirectMessage(c, 'Profil pendamping disimpan.');
 });
 
 app.post('/dashboard/pendamping/group', async (c) => {
@@ -386,8 +386,6 @@ app.post('/dashboard/pendamping/group', async (c) => {
   const body = await c.req.parseBody();
   const inviteUrl = String(body.whatsapp_invite_url ?? '').trim();
   if (user.role !== 'pendamping' || !csrfValid(c, body.csrf_token) || (inviteUrl !== '' && !/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_/?=&-]{10,}$/.test(inviteUrl))) return c.text('Tautan grup WhatsApp tidak valid.', 400);
-  const staff = await c.env.DB.prepare('SELECT whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ whatsapp_verified_at: string | null }>();
-  if (!staff?.whatsapp_verified_at) return c.text('Verifikasi nomor WhatsApp terlebih dahulu.', 403);
   const result = await c.env.DB.prepare(`UPDATE participant_groups SET whatsapp_invite_url=?,updated_at=CURRENT_TIMESTAMP WHERE pendamping_user_id=? AND edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)`).bind(inviteUrl, user.id).run();
   if (!result.meta.changes) return c.text('Kelompok tidak ditemukan.', 404);
   return redirectMessage(c, 'Tautan grup WhatsApp disimpan.');
@@ -456,79 +454,21 @@ app.post('/dashboard/profile', async (c) => {
   if (existing) {
     if (existing.has_membership && existing.gender !== gender) return c.text('Jenis kelamin tidak dapat diubah setelah pembagian kelompok.', 409);
     await c.env.DB.batch([
-      c.env.DB.prepare(`UPDATE participants SET full_name=?,phone=?,gender=?,whatsapp_verified_at=CASE WHEN phone=? THEN whatsapp_verified_at ELSE NULL END,documentation_consent_at=CASE WHEN ?='yes' THEN COALESCE(documentation_consent_at,CURRENT_TIMESTAMP) ELSE documentation_consent_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(fullName, phone, gender, phone, String(body.documentation_consent ?? ''), existing.id),
+      c.env.DB.prepare(`UPDATE participants SET full_name=?,phone=?,gender=?,whatsapp_verified_at=CURRENT_TIMESTAMP,documentation_consent_at=CASE WHEN ?='yes' THEN COALESCE(documentation_consent_at,CURRENT_TIMESTAMP) ELSE documentation_consent_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?`).bind(fullName, phone, gender, String(body.documentation_consent ?? ''), existing.id),
       ...(existing.phone !== phone ? [c.env.DB.prepare('DELETE FROM whatsapp_verification_challenges WHERE user_id=? AND consumed_at IS NULL').bind(user.id)] : []),
     ]);
-    if (existing.whatsapp_verified_at && existing.phone === phone) await autoAssignParticipantGroup(c.env.DB, existing.id);
+    await autoAssignParticipantGroup(c.env.DB, existing.id);
   } else {
-    await c.env.DB.prepare(`INSERT INTO participants (user_id, email, full_name, phone, gender, organization, privacy_consent_at, documentation_consent_at)
-      VALUES (?, ?, ?, ?, ?, 'Informatika', CURRENT_TIMESTAMP, CASE WHEN ?='yes' THEN CURRENT_TIMESTAMP ELSE NULL END)`).bind(user.id, user.email, fullName, phone, gender, String(body.documentation_consent ?? '')).run();
+    const inserted = await c.env.DB.prepare(`INSERT INTO participants (user_id, email, full_name, phone, gender, organization, privacy_consent_at, documentation_consent_at, whatsapp_verified_at)
+      VALUES (?, ?, ?, ?, ?, 'Informatika', CURRENT_TIMESTAMP, CASE WHEN ?='yes' THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP)`).bind(user.id, user.email, fullName, phone, gender, String(body.documentation_consent ?? '')).run();
+    await autoAssignParticipantGroup(c.env.DB, Number(inserted.meta.last_row_id));
   }
   return redirectMessage(c, 'Profil berhasil disimpan.');
 });
 
-app.post('/dashboard/whatsapp/send', async (c) => {
-  const user = c.get('user')!;
-  const body = await c.req.parseBody();
-  if (!csrfValid(c, body.csrf_token) || !user.email_verified_at || !['participant', 'pendamping'].includes(user.role)) return c.text('Permintaan tidak valid.', 403);
-  const cooldown = await whatsappCooldownState(c.env.DB, user.id);
-  if (cooldown.remainingSeconds > 0) return redirectMessage(c, `Tunggu ${cooldown.remainingSeconds} detik sebelum meminta kode lagi.`);
-  if (!(await rateLimit(c, 'whatsapp-send', 6, 3600))) return c.text('Batas pengiriman kode tercapai. Coba lagi nanti.', 429);
-  const contact = user.role === 'participant'
-    ? await c.env.DB.prepare('SELECT phone,whatsapp_verified_at FROM participants WHERE user_id=?').bind(user.id).first<{ phone: string; whatsapp_verified_at: string | null }>()
-    : await c.env.DB.prepare('SELECT phone_e164 AS phone,whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ phone: string; whatsapp_verified_at: string | null }>();
-  if (!contact?.phone || contact.whatsapp_verified_at) return c.text('Permintaan tidak valid.', 409);
-  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
-  const codeHash = await hmacHex(c.env.TOKEN_PEPPER, `${user.id}:${contact.phone}:${code}`);
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-  const inserted = await c.env.DB.prepare(`INSERT INTO whatsapp_verification_challenges (user_id,phone_e164,code_hash,expires_at)
-    SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM whatsapp_verification_challenges WHERE user_id=? AND datetime(created_at)>datetime('now',?))`).bind(user.id, contact.phone, codeHash, expiresAt, user.id, `-${cooldown.cooldownSeconds} seconds`).run();
-  if (!inserted.meta.changes) return redirectMessage(c, `Tunggu ${cooldown.cooldownSeconds} detik sebelum meminta kode lagi.`);
-  try {
-    await sendWhatsapp(c.env, contact.phone, code);
-  } catch (error) {
-    console.error(`[whatsapp-otp:send] user=${user.id}`, error);
-    try {
-      await c.env.DB.prepare('DELETE FROM whatsapp_verification_challenges WHERE id=? AND consumed_at IS NULL').bind(inserted.meta.last_row_id).run();
-    } catch (cleanupError) {
-      console.error(`[whatsapp-otp:cleanup] user=${user.id}`, cleanupError);
-    }
-    return redirectMessage(c, 'Kode belum dapat dikirim. Koneksi WhatsApp panitia sedang diperiksa; coba lagi beberapa saat lagi.');
-  }
-  return redirectMessage(c, 'Kode verifikasi WhatsApp telah dikirim.');
-});
-
-app.get('/dashboard/whatsapp/cooldown', async (c) => {
-  const user = c.get('user')!;
-  if (!['participant', 'pendamping'].includes(user.role)) return c.json({ error: 'forbidden' }, 403);
-  return c.json(await whatsappCooldownState(c.env.DB, user.id));
-});
-
-app.post('/dashboard/whatsapp/verify', async (c) => {
-  const user = c.get('user')!;
-  const body = await c.req.parseBody();
-  const code = String(body.code ?? '');
-  if (!csrfValid(c, body.csrf_token) || !user.email_verified_at || !['participant', 'pendamping'].includes(user.role) || !/^\d{6}$/.test(code)) return c.text('Permintaan tidak valid.', 403);
-  if (!(await rateLimit(c, 'whatsapp-verify', 12, 900))) return c.text('Terlalu banyak percobaan verifikasi.', 429);
-  const contact = user.role === 'participant'
-    ? await c.env.DB.prepare('SELECT id,phone FROM participants WHERE user_id=?').bind(user.id).first<{ id: number; phone: string }>()
-    : await c.env.DB.prepare('SELECT user_id AS id,phone_e164 AS phone FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ id: number; phone: string }>();
-  const challenge = await c.env.DB.prepare("SELECT * FROM whatsapp_verification_challenges WHERE user_id=? AND phone_e164=? AND consumed_at IS NULL AND datetime(expires_at)>datetime('now') AND attempt_count<5 ORDER BY id DESC LIMIT 1").bind(user.id, contact?.phone ?? '').first<{ id: number; code_hash: string }>();
-  if (!contact || !challenge) return redirectMessage(c, 'Kode tidak tersedia atau sudah kedaluwarsa.');
-  const expected = await hmacHex(c.env.TOKEN_PEPPER, `${user.id}:${contact.phone}:${code}`);
-  if (!safeEqual(expected, challenge.code_hash)) {
-    await c.env.DB.prepare('UPDATE whatsapp_verification_challenges SET attempt_count=attempt_count+1 WHERE id=? AND consumed_at IS NULL AND attempt_count<5').bind(challenge.id).run();
-    return redirectMessage(c, 'Kode verifikasi tidak sesuai.');
-  }
-  const consumed = await c.env.DB.prepare('UPDATE whatsapp_verification_challenges SET consumed_at=CURRENT_TIMESTAMP WHERE id=? AND consumed_at IS NULL AND attempt_count<5').bind(challenge.id).run();
-  if (!consumed.meta.changes) return redirectMessage(c, 'Kode sudah digunakan atau tidak lagi tersedia.');
-  const profileUpdate = user.role === 'participant'
-    ? await c.env.DB.prepare('UPDATE participants SET whatsapp_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=? AND phone=?').bind(contact.id, contact.phone).run()
-    : await c.env.DB.prepare('UPDATE staff_profiles SET whatsapp_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND phone_e164=?').bind(user.id, contact.phone).run();
-  if (!profileUpdate.meta.changes) return redirectMessage(c, 'Nomor berubah. Minta kode verifikasi baru.');
-  if (user.role === 'participant' && !(await autoAssignParticipantGroup(c.env.DB, contact.id))) return redirectMessage(c, 'Nomor terverifikasi, tetapi kelompok belum tersedia. Hubungi panitia.');
-  return redirectMessage(c, 'Nomor WhatsApp berhasil diverifikasi.');
-});
+app.post('/dashboard/whatsapp/send', (c) => redirectMessage(c, 'OTP WhatsApp sudah tidak diperlukan. Nomor tersimpan langsung dari profil.'));
+app.get('/dashboard/whatsapp/cooldown', (c) => c.json({ disabled: true, remainingSeconds: 0 }));
+app.post('/dashboard/whatsapp/verify', (c) => redirectMessage(c, 'OTP WhatsApp sudah tidak diperlukan.'));
 
 app.post('/dashboard/social-proofs', async (c) => {
   const user = c.get('user')!;
@@ -541,8 +481,8 @@ app.post('/dashboard/social-proofs', async (c) => {
   }
   if (!csrfValid(c, body.csrf_token) || user.role !== 'participant') return c.text('Permintaan tidak valid.', 403);
   if (!(await rateLimit(c, 'social-proofs', 5, 3600))) return c.text('Batas upload tercapai. Coba lagi nanti.', 429);
-  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND whatsapp_verified_at IS NOT NULL').bind(user.id).first<Profile>();
-  if (!profile) return c.text('Verifikasi WhatsApp terlebih dahulu.', 409);
+  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND phone IS NOT NULL').bind(user.id).first<Profile>();
+  if (!profile) return c.text('Lengkapi profil terlebih dahulu.', 409);
   const files = [
     ['collaboration_day_instagram', body.collaboration_day_instagram],
     ['hmps_instagram', body.hmps_instagram],
@@ -608,8 +548,8 @@ app.get('/dashboard/social-proofs/:id/:kind', async (c) => {
   if (!column) return c.text('Jenis bukti tidak valid.', 404);
   const proof = await c.env.DB.prepare(`SELECT sfp.${column} AS object_key,sfp.participant_id,p.user_id FROM social_follow_proofs sfp JOIN participants p ON p.id=sfp.participant_id WHERE sfp.id=?`).bind(c.req.param('id')).first<{ object_key: string; participant_id: number; user_id: number }>();
   if (user.role === 'pendamping') {
-    const staff = await c.env.DB.prepare('SELECT whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ whatsapp_verified_at: string | null }>();
-    if (!staff?.whatsapp_verified_at) return c.text('Bukti tidak ditemukan.', 404);
+    const staff = await c.env.DB.prepare('SELECT phone_e164 FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ phone_e164: string | null }>();
+    if (!staff?.phone_e164) return c.text('Bukti tidak ditemukan.', 404);
   }
   const assigned = proof && user.role === 'pendamping' ? await c.env.DB.prepare(`SELECT 1 FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id WHERE pgm.participant_id=? AND pg.pendamping_user_id=? AND pg.edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1) LIMIT 1`).bind(proof.participant_id, user.id).first() : null;
   const permitted = proof && (user.role === 'admin' || proof.user_id === user.id || Boolean(assigned));
@@ -627,8 +567,8 @@ app.post('/dashboard/social-proofs/:id/review', async (c) => {
   const reason = String(body.rejection_reason ?? '').trim().slice(0, 500);
   if (!['admin', 'pendamping'].includes(user.role) || !csrfValid(c, body.csrf_token) || !['verified', 'rejected'].includes(decision) || (decision === 'rejected' && !reason)) return c.text('Review bukti tidak valid.', 400);
   if (user.role === 'pendamping') {
-    const staff = await c.env.DB.prepare('SELECT whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ whatsapp_verified_at: string | null }>();
-    if (!staff?.whatsapp_verified_at) return c.text('Verifikasi nomor WhatsApp terlebih dahulu.', 403);
+    const staff = await c.env.DB.prepare('SELECT phone_e164 FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ phone_e164: string | null }>();
+    if (!staff?.phone_e164) return c.text('Lengkapi nomor WhatsApp terlebih dahulu.', 403);
   }
   const proof = await c.env.DB.prepare(`SELECT sfp.id FROM social_follow_proofs sfp JOIN participants p ON p.id=sfp.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE sfp.id=? AND sfp.status='pending' AND (?='admin' OR (pg.pendamping_user_id=? AND pg.edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)))`).bind(c.req.param('id'), user.role, user.id).first<{ id: number }>();
   if (!proof) return c.text('Bukti pending tidak ditemukan pada kelompokmu.', 404);
@@ -644,7 +584,7 @@ app.post('/dashboard/admission-proof', async (c) => {
   const body = await c.req.parseBody();
   if (!csrfValid(c, body.csrf_token) || user.role !== 'participant') return c.text('Permintaan tidak valid.', 403);
   if (!(await rateLimit(c, 'admission-proof', 5, 3600))) return c.text('Batas upload tercapai. Coba lagi nanti.', 429);
-  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND whatsapp_verified_at IS NOT NULL').bind(user.id).first<Profile>();
+  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND phone IS NOT NULL').bind(user.id).first<Profile>();
   const socialProof = profile ? await c.env.DB.prepare("SELECT id FROM social_follow_proofs WHERE participant_id=? AND status IN ('pending','verified')").bind(profile.id).first() : null;
   if (!profile || !socialProof) return c.text('Lengkapi bukti follow terlebih dahulu.', 409);
   const file = body.admission_proof;
@@ -680,7 +620,7 @@ app.post('/dashboard/register', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.parseBody();
   if (!csrfValid(c, body.csrf_token) || user.role !== 'participant') return c.text('Permintaan tidak valid.', 403);
-  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND whatsapp_verified_at IS NOT NULL').bind(user.id).first<Profile>();
+  const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND phone IS NOT NULL').bind(user.id).first<Profile>();
   const edition = await c.env.DB.prepare("SELECT * FROM event_editions WHERE slug=? AND status='published' AND datetime(registration_opens_at)<=datetime('now') AND datetime(registration_closes_at)>=datetime('now')").bind(String(body.edition ?? '')).first<Edition>();
   const socialProof = profile ? await c.env.DB.prepare("SELECT id FROM social_follow_proofs WHERE participant_id=? AND status IN ('pending','verified')").bind(profile.id).first() : null;
   const admissionProof = profile ? await c.env.DB.prepare('SELECT id FROM admission_proofs WHERE participant_id=?').bind(profile.id).first() : null;
@@ -760,8 +700,8 @@ app.post('/dashboard/cash-payments/:id/entries', async (c) => {
   const notes = String(body.notes ?? '').trim().slice(0, 300);
   if (!['admin', 'pendamping'].includes(user.role) || !csrfValid(c, body.csrf_token) || !Number.isInteger(paymentId) || !Number.isInteger(amount) || amount <= 0 || !['paid', 'technical_meeting', 'event'].includes(timing)) return c.text('Catatan pembayaran tunai tidak valid.', 400);
   if (user.role === 'pendamping') {
-    const staff = await c.env.DB.prepare('SELECT whatsapp_verified_at FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ whatsapp_verified_at: string | null }>();
-    if (!staff?.whatsapp_verified_at) return c.text('Verifikasi nomor WhatsApp terlebih dahulu.', 403);
+    const staff = await c.env.DB.prepare('SELECT phone_e164 FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ phone_e164: string | null }>();
+    if (!staff?.phone_e164) return c.text('Lengkapi nomor WhatsApp terlebih dahulu.', 403);
   }
   const payment = await c.env.DB.prepare(`SELECT ps.id,ps.registration_id,r.amount_due,COALESCE((SELECT SUM(amount_received) FROM cash_payment_entries WHERE payment_submission_id=ps.id),0) AS amount_paid FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id JOIN registrations r ON r.id=ps.registration_id JOIN participants p ON p.id=r.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE ps.id=? AND ps.status='pending' AND pm.type='cash' AND (?='admin' OR pg.pendamping_user_id=?)`).bind(paymentId, user.role, user.id).first<{ id: number; registration_id: number; amount_due: number; amount_paid: number }>();
   if (!payment) return c.text('Pengajuan tunai pending tidak ditemukan pada kelompokmu.', 404);
@@ -1290,45 +1230,6 @@ async function settingValue(env: Bindings, key: string, fallback: string): Promi
   return row?.value || fallback;
 }
 
-async function sendWhatsapp(env: Bindings, phone: string, code: string): Promise<void> {
-  const rows = (await env.DB.prepare("SELECT key, value FROM app_settings WHERE key LIKE 'whatsapp_%'").all<{ key: string; value: string }>()).results;
-  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  const config = await getWhatsarConfig(env);
-  if (settings.whatsapp_active !== '1' || !config) {
-    if (new URL(env.APP_ORIGIN).hostname === 'localhost') return;
-    throw new Error('WhatsApp integration is not configured');
-  }
-  const message = (settings.whatsapp_template || 'Kode verifikasi Collaboration Day: {{code}}').replaceAll('{{code}}', code);
-  const pool = (await env.DB.prepare('SELECT session_id FROM whatsapp_sender_pool ORDER BY added_at,session_id').all<{ session_id: string }>()).results.map((row) => row.session_id);
-  const rotatedPool = pool.length ? await rotateWhatsappPool(env, pool) : [];
-  const candidates = whatsappSenderCandidates(config.activeSessionId, rotatedPool);
-  if (!candidates.length) throw new Error('Tidak ada sender WhatsApp aktif atau anggota OTP pool');
-  let lastError = 'Tidak ada session WhatsApp yang berhasil mengirim';
-  for (const sessionId of candidates) {
-    try {
-      const status = await whatsarRequest<{ connected: boolean; status: string }>(env, `/api/v1/sessions/${encodeURIComponent(sessionId)}/status`);
-      if (!status.connected && status.status !== 'connected') {
-        lastError = `Session ${sessionId} tidak connected`;
-        continue;
-      }
-      await whatsarRequest<Record<string, unknown>>(env, '/api/v1/messages/send', {
-        method: 'POST',
-        body: JSON.stringify({ session_id: sessionId, to: phone.replace(/^\+/, ''), text: message, retry: true }),
-      });
-      return;
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : 'Pengiriman WhatsApp gagal';
-    }
-  }
-  throw new Error(lastError);
-}
-
-async function rotateWhatsappPool(env: Bindings, pool: string[]): Promise<string[]> {
-  const state = await env.DB.prepare('UPDATE whatsapp_round_robin_state SET cursor=(cursor+1)%?,updated_at=CURRENT_TIMESTAMP WHERE id=1 RETURNING cursor').bind(pool.length).first<{ cursor: number }>();
-  const start = state ? (state.cursor - 1 + pool.length) % pool.length : 0;
-  return [...pool.slice(start), ...pool.slice(0, start)];
-}
-
 async function issueElectronicReceipt(env: Bindings, registrationId: number): Promise<void> {
   const existing = await env.DB.prepare('SELECT id FROM electronic_receipts WHERE registration_id=?').bind(registrationId).first();
   if (existing) return;
@@ -1388,12 +1289,6 @@ async function sendWhatsappDocument(env: Bindings, phone: string, caption: strin
     body: JSON.stringify({ session_id: config.activeSessionId, to: phone.replace(/^\+/, ''), type: 'document', document_base64: document.contentBase64, filename: document.name, mimetype: 'application/pdf', text: caption, retry: true }),
   });
   if (!response.ok) throw new Error(`WhatsApp document request failed with status ${response.status}`);
-}
-
-async function whatsappCooldownState(db: D1Database, userId: number): Promise<{ requestCount: number; cooldownSeconds: number; remainingSeconds: number }> {
-  const row = await db.prepare(`SELECT COUNT(*) AS request_count,MAX(unixepoch(created_at)) AS last_sent_at FROM whatsapp_verification_challenges WHERE user_id=? AND datetime(created_at)>datetime('now','-1 hour')`).bind(userId).first<{ request_count: number; last_sent_at: number | null }>();
-  const requestCount = Number(row?.request_count || 0);
-  return { requestCount, ...whatsappOtpCooldown(requestCount, row?.last_sent_at ? Number(row.last_sent_at) : null) };
 }
 
 function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }>, message: string) {

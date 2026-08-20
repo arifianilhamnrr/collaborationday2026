@@ -92,7 +92,7 @@ describe('participant dashboard', () => {
   it('asks legacy participants for gender before continuing onboarding', () => {
     const html = participantDashboard(user, { ...profile, gender: null }, edition, null, methods);
 
-    expect(html).toContain('Langkah 2 dari 6');
+    expect(html).toContain('Langkah 2 dari 5');
     expect(html).toContain('value="Ayu Pratama"');
     expect(html).toContain('value="+6281234567890"');
     expect(html).toContain('Pilih jenis kelamin');
@@ -234,13 +234,13 @@ describe('participant dashboard', () => {
     expect(html).toContain('action="/dashboard/admission-proof"');
   });
 
-  it('loads the live cooldown timer on WhatsApp verification', () => {
+  it('skips WhatsApp OTP and continues onboarding with a saved number', () => {
     const html = participantDashboard(user, { ...profile, whatsapp_verified_at: null }, edition, null, methods);
 
-    expect(html).toContain('action="/dashboard/whatsapp/send"');
-    expect(html).toContain('<script src="/whatsapp-cooldown.js" defer></script>');
-    expect(html).toContain('Nomor atau data profil salah?');
-    expect(html).toContain('>Perbarui profil</button>');
+    expect(html).toContain('Langkah 3 dari 5');
+    expect(html).toContain('action="/dashboard/social-proofs"');
+    expect(html).not.toContain('action="/dashboard/whatsapp/send"');
+    expect(html).not.toContain('action="/dashboard/whatsapp/verify"');
   });
 });
 
@@ -332,14 +332,14 @@ describe('staff workspaces', () => {
   const pendamping: SessionUser = { ...admin, id: 2, email: 'pendamping@example.com', role: 'pendamping' };
   const bendahara: SessionUser = { ...admin, id: 3, email: 'bendahara@example.com', role: 'bendahara' };
 
-  it('requires pendamping WhatsApp profile and OTP before operations', () => {
+  it('requires a pendamping WhatsApp number without OTP', () => {
     const profileHtml = pendampingDashboardPage(pendamping, null, null, [], []);
     expect(profileHtml).toContain('Pendamping workspace');
     expect(profileHtml).toContain('action="/dashboard/pendamping/profile"');
 
-    const otpHtml = pendampingDashboardPage(pendamping, { user_id: 2, role: 'pendamping', full_name: 'Kak Dita', phone_e164: '+6281234567890', whatsapp_verified_at: null }, null, [], []);
-    expect(otpHtml).toContain('action="/dashboard/whatsapp/send"');
-    expect(otpHtml).toContain('action="/dashboard/whatsapp/verify"');
+    const readyHtml = pendampingDashboardPage(pendamping, { user_id: 2, role: 'pendamping', full_name: 'Kak Dita', phone_e164: '+6281234567890', whatsapp_verified_at: null }, null, [], []);
+    expect(readyHtml).toContain('Belum ada kelompok.');
+    expect(readyHtml).not.toContain('action="/dashboard/whatsapp/send"');
   });
 
   it('renders proof review and cash installment controls for the assigned group', () => {
@@ -411,8 +411,9 @@ describe('staff workspaces', () => {
       expect(html).toContain('action="/dashboard/account/password"');
       expect(html).toContain('class="active" href="/dashboard/account"');
     }
-    expect(pendampingHtml).toContain('action="/dashboard/whatsapp/send"');
-    expect(pendampingHtml).toContain('action="/dashboard/whatsapp/verify"');
+    expect(pendampingHtml).toContain('<b>Tersimpan</b>');
+    expect(pendampingHtml).not.toContain('action="/dashboard/whatsapp/send"');
+    expect(pendampingHtml).not.toContain('action="/dashboard/whatsapp/verify"');
     expect(bendaharaHtml).toContain('Nomor WhatsApp (opsional)');
   });
 });

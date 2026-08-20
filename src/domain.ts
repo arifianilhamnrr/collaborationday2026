@@ -29,16 +29,6 @@ export function validCashEntry(amount: number, remaining: number, timing: string
   return (timing === 'technical_meeting' || timing === 'event') && amount < remaining;
 }
 
-export function whatsappOtpCooldown(requestCount: number, lastSentAt: number | null, now = Math.floor(Date.now() / 1000)): { cooldownSeconds: number; remainingSeconds: number } {
-  const cooldownSeconds = requestCount >= 3 ? 180 : 60;
-  if (requestCount <= 0 || !lastSentAt) return { cooldownSeconds, remainingSeconds: 0 };
-  return { cooldownSeconds, remainingSeconds: Math.max(0, cooldownSeconds - (now - lastSentAt)) };
-}
-
-export function whatsappSenderCandidates(activeSessionId: string, pool: string[]): string[] {
-  return [...new Set([activeSessionId, ...pool].filter(Boolean))];
-}
-
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
