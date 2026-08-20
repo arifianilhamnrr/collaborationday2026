@@ -550,7 +550,7 @@ app.post('/dashboard/social-proofs', async (c) => {
     for (const [name, file, contentType] of validatedFiles) {
       const extension = contentType === 'image/png' ? 'png' : 'jpg';
       const key = `social-proofs/participant-${profile.id}/${name}-${randomToken(24)}.${extension}`;
-      await c.env.PROOFS.put(key, file.stream(), { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: name } });
+      await c.env.PROOFS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: name } });
       objectKeys[name] = key;
     }
     await c.env.DB.prepare(`INSERT INTO social_follow_proofs (participant_id, collaboration_day_instagram_key, hmps_instagram_key, hmps_tiktok_key)
@@ -620,7 +620,7 @@ app.post('/dashboard/admission-proof', async (c) => {
   const existing = await c.env.DB.prepare('SELECT object_key FROM admission_proofs WHERE participant_id=?').bind(profile.id).first<{ object_key: string }>();
   const extension = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : 'jpg';
   const objectKey = `admission-proofs/participant-${profile.id}/${randomToken(24)}.${extension}`;
-  await c.env.PROOFS.put(objectKey, file.stream(), { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: 'informatics-admission' } });
+  await c.env.PROOFS.put(objectKey, await file.arrayBuffer(), { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: 'informatics-admission' } });
   try {
     await c.env.DB.prepare(`INSERT INTO admission_proofs (participant_id, object_key, original_filename, content_type, size_bytes) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(participant_id) DO UPDATE SET object_key=excluded.object_key, original_filename=excluded.original_filename, content_type=excluded.content_type, size_bytes=excluded.size_bytes, updated_at=CURRENT_TIMESTAMP`).bind(profile.id, objectKey, file.name.slice(0, 200), contentType, file.size).run();
@@ -680,7 +680,7 @@ app.post('/dashboard/payment-proof', async (c) => {
   if (!method) return c.text('Metode pembayaran tidak valid.', 400);
   const extension = contentType === 'application/pdf' ? 'pdf' : contentType === 'image/png' ? 'png' : 'jpg';
   const objectKey = `proofs/edition-${registration.edition_id}/${randomToken(24)}.${extension}`;
-  await c.env.PROOFS.put(objectKey, file.stream(), { httpMetadata: { contentType }, customMetadata: { registrationId: String(registration.id) } });
+  await c.env.PROOFS.put(objectKey, await file.arrayBuffer(), { httpMetadata: { contentType }, customMetadata: { registrationId: String(registration.id) } });
   try {
     await c.env.DB.batch([
       c.env.DB.prepare('INSERT INTO payment_submissions (registration_id, payment_method_id, proof_object_key, original_filename, content_type, size_bytes) VALUES (?, ?, ?, ?, ?, ?)').bind(registration.id, methodId, objectKey, file.name.slice(0, 200), contentType, file.size),
