@@ -752,6 +752,7 @@ app.post('/dashboard/cash-payments/:id/entries', async (c) => {
       await issueElectronicReceipt(c.env, payment.registration_id);
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Receipt delivery failed');
+      queuePaymentConfirmationFallback(c, payment.registration_id);
     }
   }
   return redirectMessage(c, settled ? 'Pembayaran tunai lunas dan registrasi telah dikonfirmasi.' : 'Cicilan tunai dicatat. Sisa tagihan tetap terbuka.');
@@ -802,6 +803,7 @@ app.post('/dashboard/payments/:id/review', async (c) => {
       await issueElectronicReceipt(c.env, payment.registration_id);
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Receipt delivery failed');
+      queuePaymentConfirmationFallback(c, payment.registration_id);
     }
   } else {
     queueNotificationEmail(c, [payment.email], 'Pembayaran ditolak — perlu diperbaiki', `<h1>Pembayaran belum dapat disetujui</h1><p>Halo ${escapeHtml(payment.full_name)}, bukti pembayaran untuk nomor peserta <b>${escapeHtml(payment.public_id)}</b> ditolak.</p><p>Alasan: <b>${escapeHtml(reason)}</b></p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Unggah bukti pembayaran baru</a></p>`);
@@ -1293,24 +1295,7 @@ async function deliverReceipt(env: Bindings, receiptId: number, recipient: { ema
   } catch (error) {
     await env.DB.prepare("UPDATE electronic_receipts SET email_status='failed', last_delivery_error=? WHERE id=?").bind(String(error).slice(0, 500), receiptId).run();
   }
-  try {
-    await sendWhatsappDocument(env, recipient.phone, `Kuitansi pembayaran Collaboration Day 2026 — ${recipient.receiptNumber}`, attachment);
-    await env.DB.prepare("UPDATE electronic_receipts SET whatsapp_status='sent', whatsapp_sent_at=CURRENT_TIMESTAMP WHERE id=?").bind(receiptId).run();
-  } catch (error) {
-    await env.DB.prepare("UPDATE electronic_receipts SET whatsapp_status='failed', last_delivery_error=? WHERE id=?").bind(String(error).slice(0, 500), receiptId).run();
-  }
-}
-
-async function sendWhatsappDocument(env: Bindings, phone: string, caption: string, document: { name: string; contentBase64: string }): Promise<void> {
-  const active = await settingValue(env, 'whatsapp_active', '0');
-  const config = await getWhatsarConfig(env);
-  if (active !== '1' || !config?.activeSessionId) throw new Error('WhatsApp document delivery is not configured');
-  const response = await fetch(`${config.baseUrl}/api/v1/messages/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-API-Key': config.apiKey },
-    body: JSON.stringify({ session_id: config.activeSessionId, to: phone.replace(/^\+/, ''), type: 'document', document_base64: document.contentBase64, filename: document.name, mimetype: 'application/pdf', text: caption, retry: true }),
-  });
-  if (!response.ok) throw new Error(`WhatsApp document request failed with status ${response.status}`);
+  await env.DB.prepare("UPDATE electronic_receipts SET whatsapp_status='skipped' WHERE id=?").bind(receiptId).run();
 }
 
 function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }>, message: string) {
@@ -1335,6 +1320,14 @@ function queueNotificationEmail(c: Context<{ Bindings: Bindings; Variables: Vari
       if (result.status === 'rejected') console.error(`[email-notification] subject=${subject} recipient=${uniqueRecipients[index]}`, result.reason);
     });
   }));
+}
+
+function queuePaymentConfirmationFallback(c: Context<{ Bindings: Bindings; Variables: Variables }>, registrationId: number): void {
+  c.executionCtx.waitUntil((async () => {
+    const recipient = await c.env.DB.prepare(`SELECT p.email,p.full_name,pg.name AS group_name,pg.whatsapp_invite_url FROM registrations r JOIN participants p ON p.id=r.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE r.id=? AND r.status='confirmed'`).bind(registrationId).first<{ email: string; full_name: string; group_name: string | null; whatsapp_invite_url: string | null }>();
+    if (!recipient) return;
+    await sendTransactionalEmail(c.env, recipient.email, 'Pembayaran terverifikasi — Collaboration Day 2026', confirmedPaymentEmailContent(c.env.APP_ORIGIN, { participantName: recipient.full_name, receiptNumber: 'Sedang diproses', groupName: recipient.group_name, groupWhatsappUrl: recipient.whatsapp_invite_url }));
+  })().catch((error) => console.error(`[email-notification:payment-confirmed] registration=${registrationId}`, error)));
 }
 
 app.notFound((c) => c.html(layout('Tidak ditemukan', '<main class="panel"><h1>Halaman tidak ditemukan.</h1><a class="button" href="/">Ke beranda</a></main>'), 404));
