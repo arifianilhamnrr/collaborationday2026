@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature, whatsappOtpCooldown } from '../src/domain';
+import { detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature, whatsappOtpCooldown, whatsappSenderCandidates } from '../src/domain';
 
 describe('domain utilities', () => {
   it('normalizes and validates email', () => {
@@ -29,6 +29,11 @@ describe('domain utilities', () => {
     expect(whatsappOtpCooldown(2, 1000, 1060)).toEqual({ cooldownSeconds: 60, remainingSeconds: 0 });
     expect(whatsappOtpCooldown(3, 1000, 1060)).toEqual({ cooldownSeconds: 180, remainingSeconds: 120 });
     expect(whatsappOtpCooldown(0, null, 1060)).toEqual({ cooldownSeconds: 60, remainingSeconds: 0 });
+  });
+
+  it('tries the active WhatsApp session before stale pool fallbacks', () => {
+    expect(whatsappSenderCandidates('active-session', ['stale-session', 'active-session'])).toEqual(['active-session', 'stale-session']);
+    expect(whatsappSenderCandidates('', ['pool-session'])).toEqual(['pool-session']);
   });
 
   it('hashes and signs deterministically', async () => {

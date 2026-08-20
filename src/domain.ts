@@ -35,6 +35,10 @@ export function whatsappOtpCooldown(requestCount: number, lastSentAt: number | n
   return { cooldownSeconds, remainingSeconds: Math.max(0, cooldownSeconds - (now - lastSentAt)) };
 }
 
+export function whatsappSenderCandidates(activeSessionId: string, pool: string[]): string[] {
+  return [...new Set([activeSessionId, ...pool].filter(Boolean))];
+}
+
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;')

@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
 import { sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
-import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, whatsappOtpCooldown, type ProofContentType } from './domain';
+import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, whatsappOtpCooldown, whatsappSenderCandidates, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
 import { qrisWithAmount } from './qris';
 import { rateLimit, verifyTurnstile } from './security';
@@ -487,8 +487,13 @@ app.post('/dashboard/whatsapp/send', async (c) => {
   try {
     await sendWhatsapp(c.env, contact.phone, code);
   } catch (error) {
-    await c.env.DB.prepare('DELETE FROM whatsapp_verification_challenges WHERE id=? AND consumed_at IS NULL').bind(inserted.meta.last_row_id).run();
-    throw error;
+    console.error(`[whatsapp-otp:send] user=${user.id}`, error);
+    try {
+      await c.env.DB.prepare('DELETE FROM whatsapp_verification_challenges WHERE id=? AND consumed_at IS NULL').bind(inserted.meta.last_row_id).run();
+    } catch (cleanupError) {
+      console.error(`[whatsapp-otp:cleanup] user=${user.id}`, cleanupError);
+    }
+    return redirectMessage(c, 'Kode belum dapat dikirim. Koneksi WhatsApp panitia sedang diperiksa; coba lagi beberapa saat lagi.');
   }
   return redirectMessage(c, 'Kode verifikasi WhatsApp telah dikirim.');
 });
@@ -1295,7 +1300,8 @@ async function sendWhatsapp(env: Bindings, phone: string, code: string): Promise
   }
   const message = (settings.whatsapp_template || 'Kode verifikasi Collaboration Day: {{code}}').replaceAll('{{code}}', code);
   const pool = (await env.DB.prepare('SELECT session_id FROM whatsapp_sender_pool ORDER BY added_at,session_id').all<{ session_id: string }>()).results.map((row) => row.session_id);
-  const candidates = pool.length ? await rotateWhatsappPool(env, pool) : config.activeSessionId ? [config.activeSessionId] : [];
+  const rotatedPool = pool.length ? await rotateWhatsappPool(env, pool) : [];
+  const candidates = whatsappSenderCandidates(config.activeSessionId, rotatedPool);
   if (!candidates.length) throw new Error('Tidak ada sender WhatsApp aktif atau anggota OTP pool');
   let lastError = 'Tidak ada session WhatsApp yang berhasil mengirim';
   for (const sessionId of candidates) {
@@ -1305,13 +1311,11 @@ async function sendWhatsapp(env: Bindings, phone: string, code: string): Promise
         lastError = `Session ${sessionId} tidak connected`;
         continue;
       }
-      const response = await fetch(`${config.baseUrl}/api/v1/messages/send`, {
+      await whatsarRequest<Record<string, unknown>>(env, '/api/v1/messages/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': config.apiKey },
         body: JSON.stringify({ session_id: sessionId, to: phone.replace(/^\+/, ''), text: message, retry: true }),
       });
-      if (response.ok) return;
-      lastError = `Session ${sessionId} gagal (${response.status})`;
+      return;
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'Pengiriman WhatsApp gagal';
     }
