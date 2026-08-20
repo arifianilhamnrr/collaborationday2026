@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Profile, SessionUser } from '../src/types';
-import { accountProfilePage, adminEventPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, landing, participantDashboard, paymentMethodsPage, pendampingDashboardPage, whatsarPairingPage, type Edition, type PaymentMethod } from '../src/views';
+import { accountProfilePage, adminEventPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, landing, participantDashboard, paymentMethodsPage, pendampingDashboardPage, temporaryFailurePage, whatsarPairingPage, type Edition, type PaymentMethod } from '../src/views';
 
 const user: SessionUser = {
   id: 1,
@@ -26,6 +26,17 @@ const profile: Profile = {
   privacy_consent_at: '2026-08-15 10:00:00',
   documentation_consent_at: null,
 };
+
+describe('safe error page', () => {
+  it('does not expose internal references or retry a POST route as GET', () => {
+    const html = temporaryFailurePage('/dashboard');
+
+    expect(html).toContain('Permintaan belum berhasil.');
+    expect(html).toContain('href="/dashboard"');
+    expect(html).not.toContain('Referensi');
+    expect(html).not.toContain('Coba lagi');
+  });
+});
 
 const methods: PaymentMethod[] = [{
   id: 1,

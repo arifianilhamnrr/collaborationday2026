@@ -8,7 +8,7 @@ import { generateReceiptPdf } from './receipt';
 import { qrisWithAmount } from './qris';
 import { rateLimit, verifyTurnstile } from './security';
 import type { Bindings, Profile, StaffProfile, User, Variables } from './types';
-import { accountProfilePage, adminEventPage, adminGalleryPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, authPage, landing, layout, participantDashboard, paymentMethodsPage, pendampingDashboardPage, staffVerificationPage, verifyEmailPage, whatsarPairingPage, type BenefitItem, type Edition, type Gallery, type PaymentMethod } from './views';
+import { accountProfilePage, adminEventPage, adminGalleryPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, authPage, landing, layout, participantDashboard, paymentMethodsPage, pendampingDashboardPage, staffVerificationPage, temporaryFailurePage, verifyEmailPage, whatsarPairingPage, type BenefitItem, type Edition, type Gallery, type PaymentMethod } from './views';
 import { getWhatsarConfig, loadWhatsarOverview, WhatsarRequestError, whatsarRequest, type WhatsarSession } from './whatsar';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -1411,8 +1411,8 @@ app.onError((error, c) => {
   const reference = randomToken(6).toUpperCase();
   console.error(error instanceof Error ? `[${reference}] ${error.stack || error.message}` : `[${reference}] Unknown error`);
   const browserRequest = c.req.path.startsWith('/dashboard') || (c.req.header('Accept') || '').includes('text/html');
-  if (browserRequest) return c.html(layout('Gangguan sementara', `<main class="panel"><span class="eyebrow">Referensi ${reference}</span><h1>Permintaan belum berhasil.</h1><p>Layanan mengalami gangguan sementara. Data yang sudah tersimpan tetap aman; silakan kembali dan coba lagi.</p><div class="inline"><a class="button" href="${c.req.path.startsWith('/dashboard') ? '/dashboard' : '/'}">Kembali</a><a class="button secondary" href="${escapeHtml(c.req.path)}">Coba lagi</a></div></main>`), 500);
-  return c.json({ error: 'service_unavailable', message: 'Layanan sedang mengalami gangguan sementara.', reference }, 500);
+  if (browserRequest) return c.html(temporaryFailurePage(c.req.path.startsWith('/dashboard') ? '/dashboard' : '/'), 500);
+  return c.json({ error: 'service_unavailable', message: 'Layanan sedang mengalami gangguan sementara.' }, 500);
 });
 
 function pairingErrorMessage(error: unknown): string {

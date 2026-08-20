@@ -236,6 +236,13 @@ export function layout(
   return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Collaboration Day Informatika 2026: Connecting Minds in the Digital Universe."><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png"><title>${escapeHtml(title)}</title><style>${css}${cssV2}${cssV3}${cssV4}${motionCss}</style></head><body><nav><a class="brand" href="/"><img src="/brand/collaboration-day-2026.png" alt=""><span>COLLABORATION DAY</span></a><div class="navlinks">${nav}</div></nav>${body}<footer><div class="inline"><img src="/brand/hmps-informatika.png" alt="HMPS Informatika" width="42" height="42"><img src="/brand/program-studi-informatika.png" alt="Program Studi Informatika" width="42" height="42"><b>COLLABORATION DAY 2026</b></div><span>Bangun Relasi, Satu Ambisi. Informatika, Salam Kolaborasi!</span></footer><script src="/flash.js" defer></script></body></html>`;
 }
 
+export function temporaryFailurePage(returnTo: '/dashboard' | '/' = '/') {
+  return layout(
+    'Gangguan sementara',
+    `<main class="panel"><h1>Permintaan belum berhasil.</h1><p>Layanan mengalami gangguan sementara. Data yang sudah tersimpan tetap aman. Silakan kembali, lalu ulangi tindakanmu beberapa saat lagi.</p><a class="button" href="${returnTo}">Kembali</a></main>`,
+  );
+}
+
 export function landing(
   current: Edition,
   archived: Edition[],
