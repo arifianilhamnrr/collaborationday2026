@@ -100,10 +100,20 @@ describe('participant dashboard', () => {
   });
 
   it('shows an automatically assigned group before event registration', () => {
-    const html = participantDashboard(user, { ...profile, group_name: 'Horison', group_whatsapp_url: null }, edition, null, methods);
+    const html = participantDashboard(user, { ...profile, group_name: 'Horison', group_whatsapp_url: 'https://chat.whatsapp.com/private-group' }, edition, null, methods);
 
     expect(html).toContain('<b>Kelompok Horison</b>');
-    expect(html).toContain('Tautan grup WhatsApp sedang disiapkan pendamping.');
+    expect(html).toContain('Tautan grup WhatsApp tersedia setelah pembayaran terverifikasi.');
+    expect(html).not.toContain('https://chat.whatsapp.com/private-group');
+  });
+
+  it('reveals the WhatsApp group only after payment is confirmed', () => {
+    const registration = { id: 2, status: 'confirmed', title: 'Collaboration Day', theme: 'Codeverse', public_id: 'CD26-A', participant_ref: 'REF', ticket_reference: 'REF', amount_due: 120000, group_name: 'Orion', group_whatsapp_url: 'https://chat.whatsapp.com/orion-group', receipt_id: 4 };
+    const html = participantDashboard(user, profile, edition, registration, methods, 'verified', true);
+
+    expect(html).toContain('<b>Kelompok Orion</b>');
+    expect(html).toContain('https://chat.whatsapp.com/orion-group');
+    expect(html).toContain('Gabung grup WhatsApp');
   });
 
   it('requires three private social-follow screenshots before registration', () => {

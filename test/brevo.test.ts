@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { brandedEmailTemplate } from '../src/brevo';
+import { brandedEmailTemplate, confirmedPaymentEmailContent } from '../src/brevo';
 
 describe('branded transactional email', () => {
   it('wraps content in an email-safe Collaboration Day identity', () => {
@@ -12,5 +12,16 @@ describe('branded transactional email', () => {
     expect(html).toContain('<h1>Verifikasi email</h1>');
     expect(html).toContain('INFORMATIKA UIN SAIZU');
     expect(html).toContain('Email ini dikirim otomatis');
+  });
+});
+
+describe('payment confirmation email', () => {
+  it('includes the assigned group and private WhatsApp link', () => {
+    const html = confirmedPaymentEmailContent('https://collaborationday2026.web.id', { participantName: 'Ayu', receiptNumber: 'CD26-123', groupName: 'Orion', groupWhatsappUrl: 'https://chat.whatsapp.com/orion-private' });
+
+    expect(html).toContain('Kelompok Orion');
+    expect(html).toContain('https://chat.whatsapp.com/orion-private');
+    expect(html).toContain('Gabung grup WhatsApp');
+    expect(html).toContain('https://collaborationday2026.web.id/dashboard');
   });
 });

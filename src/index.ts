@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
-import { sendTransactionalEmail } from './brevo';
+import { confirmedPaymentEmailContent, sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
 import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
@@ -534,6 +534,12 @@ app.post('/dashboard/social-proofs', async (c) => {
       });
     }));
   }
+  try {
+    const pendamping = await c.env.DB.prepare(`SELECT u.email,pg.name AS group_name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id WHERE pgm.participant_id=? AND pg.edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1) LIMIT 1`).bind(profile.id).first<{ email: string; group_name: string }>();
+    if (pendamping) queueNotificationEmail(c, [pendamping.email], `Bukti follow baru — ${profile.full_name}`, `<h1>Bukti follow baru telah diunggah</h1><p><b>${escapeHtml(profile.full_name)}</b> dari kelompok <b>${escapeHtml(pendamping.group_name)}</b> mengunggah tiga bukti follow.</p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Buka dashboard pendamping</a></p>`);
+  } catch (error) {
+    console.error(`[email-notification:follow-upload] participant=${profile.id}`, error);
+  }
   return redirectMessage(c, 'Ketiga bukti follow berhasil disimpan.');
 });
 
@@ -570,12 +576,13 @@ app.post('/dashboard/social-proofs/:id/review', async (c) => {
     const staff = await c.env.DB.prepare('SELECT phone_e164 FROM staff_profiles WHERE user_id=?').bind(user.id).first<{ phone_e164: string | null }>();
     if (!staff?.phone_e164) return c.text('Lengkapi nomor WhatsApp terlebih dahulu.', 403);
   }
-  const proof = await c.env.DB.prepare(`SELECT sfp.id FROM social_follow_proofs sfp JOIN participants p ON p.id=sfp.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE sfp.id=? AND sfp.status='pending' AND (?='admin' OR (pg.pendamping_user_id=? AND pg.edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)))`).bind(c.req.param('id'), user.role, user.id).first<{ id: number }>();
+  const proof = await c.env.DB.prepare(`SELECT sfp.id,p.email,p.full_name,pg.name AS group_name FROM social_follow_proofs sfp JOIN participants p ON p.id=sfp.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE sfp.id=? AND sfp.status='pending' AND (?='admin' OR (pg.pendamping_user_id=? AND pg.edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)))`).bind(c.req.param('id'), user.role, user.id).first<{ id: number; email: string; full_name: string; group_name: string | null }>();
   if (!proof) return c.text('Bukti pending tidak ditemukan pada kelompokmu.', 404);
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE social_follow_proofs SET status=?,rejection_reason=?,reviewed_by_user_id=?,reviewed_at=CURRENT_TIMESTAMP WHERE id=? AND status=\'pending\'').bind(decision, decision === 'rejected' ? reason : null, user.id, proof.id),
     c.env.DB.prepare("INSERT INTO audit_logs (actor_user_id,action,subject_type,subject_id,metadata_json) VALUES (?,'social_proof.reviewed','social_follow_proof',?,?)").bind(user.id, String(proof.id), JSON.stringify({ decision, reason: decision === 'rejected' ? reason : undefined })),
   ]);
+  queueNotificationEmail(c, [proof.email], decision === 'verified' ? 'Bukti follow disetujui' : 'Bukti follow perlu diperbaiki', decision === 'verified' ? `<h1>Bukti follow disetujui</h1><p>Halo ${escapeHtml(proof.full_name)}, bukti follow kamu telah diperiksa dan disetujui.</p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Lanjutkan di dashboard</a></p>` : `<h1>Bukti follow ditolak</h1><p>Halo ${escapeHtml(proof.full_name)}, bukti follow kamu perlu diperbaiki.</p><p>Alasan: <b>${escapeHtml(reason)}</b></p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Unggah ulang bukti</a></p>`);
   return redirectMessage(c, decision === 'verified' ? 'Bukti follow disetujui.' : 'Bukti follow ditolak.');
 });
 
@@ -664,6 +671,13 @@ app.post('/dashboard/payment-proof', async (c) => {
     await c.env.PROOFS.delete(objectKey);
     throw error;
   }
+  try {
+    const paymentNotice = await c.env.DB.prepare(`SELECT p.full_name,r.public_id,pm.label AS payment_method FROM registrations r JOIN participants p ON p.id=r.participant_id JOIN payment_methods pm ON pm.id=? WHERE r.id=?`).bind(methodId, registration.id).first<{ full_name: string; public_id: string; payment_method: string }>();
+    const treasurers = (await c.env.DB.prepare("SELECT u.email FROM users u JOIN staff_profiles sp ON sp.user_id=u.id WHERE sp.role='bendahara' AND u.status='active' AND u.email_verified_at IS NOT NULL").all<{ email: string }>()).results;
+    if (paymentNotice) queueNotificationEmail(c, treasurers.map((row) => row.email), `Bukti pembayaran baru — ${paymentNotice.public_id}`, `<h1>Bukti pembayaran baru telah diunggah</h1><p><b>${escapeHtml(paymentNotice.full_name)}</b> mengunggah bukti pembayaran melalui <b>${escapeHtml(paymentNotice.payment_method)}</b>.</p><p>Nomor peserta: <b>${escapeHtml(paymentNotice.public_id)}</b></p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard/payments">Review pembayaran</a></p>`);
+  } catch (error) {
+    console.error(`[email-notification:payment-upload] registration=${registration.id}`, error);
+  }
   return redirectMessage(c, 'Bukti diterima dan sedang diverifikasi.');
 });
 
@@ -687,6 +701,12 @@ app.post('/dashboard/payment-cash', async (c) => {
   } catch (error) {
     if (String(error).includes('UNIQUE')) return redirectMessage(c, 'Pengajuan tunai sudah tercatat. Pendamping dapat melanjutkan pencatatan cicilan pada pengajuan yang sama.');
     throw error;
+  }
+  try {
+    const cashNotice = await c.env.DB.prepare(`SELECT p.full_name,r.public_id,u.email AS pendamping_email,pg.name AS group_name FROM registrations r JOIN participants p ON p.id=r.participant_id JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id WHERE r.id=?`).bind(registration.id).first<{ full_name: string; public_id: string; pendamping_email: string; group_name: string }>();
+    if (cashNotice) queueNotificationEmail(c, [cashNotice.pendamping_email], `Pengajuan pembayaran tunai — ${cashNotice.public_id}`, `<h1>Pengajuan pembayaran tunai baru</h1><p><b>${escapeHtml(cashNotice.full_name)}</b> dari kelompok <b>${escapeHtml(cashNotice.group_name)}</b> mengajukan pembayaran tunai.</p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Buka dashboard pendamping</a></p>`);
+  } catch (error) {
+    console.error(`[email-notification:cash-upload] registration=${registration.id}`, error);
   }
   return redirectMessage(c, 'Pengajuan pembayaran tunai diterima. Serahkan uang kepada pendamping kelompokmu untuk dicatat.');
 });
@@ -768,7 +788,7 @@ app.post('/dashboard/payments/:id/review', async (c) => {
   const decision = String(body.decision ?? '');
   const reason = String(body.rejection_reason ?? '').trim().slice(0, 500);
   if (!['verified', 'rejected'].includes(decision) || (decision === 'rejected' && !reason)) return c.text('Keputusan review tidak valid.', 400);
-  const payment = await c.env.DB.prepare("SELECT ps.id,ps.registration_id FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id WHERE ps.id=? AND ps.status='pending' AND pm.type!='cash'").bind(c.req.param('id')).first<{ id: number; registration_id: number }>();
+  const payment = await c.env.DB.prepare(`SELECT ps.id,ps.registration_id,p.email,p.full_name,r.public_id,pg.name AS group_name,pg.whatsapp_invite_url FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id JOIN registrations r ON r.id=ps.registration_id JOIN participants p ON p.id=r.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE ps.id=? AND ps.status='pending' AND pm.type!='cash'`).bind(c.req.param('id')).first<{ id: number; registration_id: number; email: string; full_name: string; public_id: string; group_name: string | null; whatsapp_invite_url: string | null }>();
   if (!payment) return c.text('Bukti pending tidak ditemukan.', 404);
   const status = decision === 'verified' ? 'confirmed' : 'rejected';
   const results = await c.env.DB.batch([
@@ -783,6 +803,8 @@ app.post('/dashboard/payments/:id/review', async (c) => {
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Receipt delivery failed');
     }
+  } else {
+    queueNotificationEmail(c, [payment.email], 'Pembayaran ditolak — perlu diperbaiki', `<h1>Pembayaran belum dapat disetujui</h1><p>Halo ${escapeHtml(payment.full_name)}, bukti pembayaran untuk nomor peserta <b>${escapeHtml(payment.public_id)}</b> ditolak.</p><p>Alasan: <b>${escapeHtml(reason)}</b></p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Unggah bukti pembayaran baru</a></p>`);
   }
   return redirectMessage(c, 'Review pembayaran disimpan.');
 });
@@ -1233,10 +1255,10 @@ async function settingValue(env: Bindings, key: string, fallback: string): Promi
 async function issueElectronicReceipt(env: Bindings, registrationId: number): Promise<void> {
   const existing = await env.DB.prepare('SELECT id FROM electronic_receipts WHERE registration_id=?').bind(registrationId).first();
   if (existing) return;
-  const data = await env.DB.prepare(`SELECT r.id, r.public_id, r.amount_due, r.confirmed_at, p.full_name, p.email, p.phone, e.title, e.theme, e.venue, pm.label AS payment_method
+  const data = await env.DB.prepare(`SELECT r.id, r.public_id, r.amount_due, r.confirmed_at, p.full_name, p.email, p.phone, e.title, e.theme, e.venue, pm.label AS payment_method,pg.name AS group_name,pg.whatsapp_invite_url
     FROM registrations r JOIN participants p ON p.id=r.participant_id JOIN event_editions e ON e.id=r.edition_id
     JOIN payment_submissions ps ON ps.registration_id=r.id AND ps.status='verified'
-    JOIN payment_methods pm ON pm.id=ps.payment_method_id WHERE r.id=? ORDER BY ps.reviewed_at DESC LIMIT 1`).bind(registrationId).first<Record<string, unknown>>();
+    JOIN payment_methods pm ON pm.id=ps.payment_method_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE r.id=? ORDER BY ps.reviewed_at DESC LIMIT 1`).bind(registrationId).first<Record<string, unknown>>();
   if (!data) throw new Error('Confirmed registration data not found for receipt');
   const receiptNumber = `CD26-${randomToken(9).toUpperCase()}`;
   const verifiedAt = new Date(String(data.confirmed_at).replace(' ', 'T') + 'Z').toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'long', timeStyle: 'short' });
@@ -1251,22 +1273,22 @@ async function issueElectronicReceipt(env: Bindings, registrationId: number): Pr
     await env.PROOFS.delete(objectKey);
     throw error;
   }
-  await deliverReceipt(env, receiptId, { email: String(data.email), phone: String(data.phone), participantName: String(data.full_name), receiptNumber }, pdf);
+  await deliverReceipt(env, receiptId, { email: String(data.email), phone: String(data.phone), participantName: String(data.full_name), receiptNumber, groupName: data.group_name ? String(data.group_name) : null, groupWhatsappUrl: data.whatsapp_invite_url ? String(data.whatsapp_invite_url) : null }, pdf);
 }
 
 async function deliverExistingReceipt(env: Bindings, receiptId: number): Promise<void> {
-  const receipt = await env.DB.prepare(`SELECT er.id, er.object_key, er.receipt_number, p.email, p.phone, p.full_name FROM electronic_receipts er JOIN registrations r ON r.id=er.registration_id JOIN participants p ON p.id=r.participant_id WHERE er.id=?`).bind(receiptId).first<Record<string, unknown>>();
+  const receipt = await env.DB.prepare(`SELECT er.id,er.object_key,er.receipt_number,p.email,p.phone,p.full_name,pg.name AS group_name,pg.whatsapp_invite_url FROM electronic_receipts er JOIN registrations r ON r.id=er.registration_id JOIN participants p ON p.id=r.participant_id LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id LEFT JOIN participant_groups pg ON pg.id=pgm.group_id WHERE er.id=?`).bind(receiptId).first<Record<string, unknown>>();
   if (!receipt) throw new Error('Receipt not found');
   const object = await env.PROOFS.get(String(receipt.object_key));
   if (!object) throw new Error('Receipt PDF object not found');
   const pdf = new Uint8Array(await object.arrayBuffer());
-  await deliverReceipt(env, receiptId, { email: String(receipt.email), phone: String(receipt.phone), participantName: String(receipt.full_name), receiptNumber: String(receipt.receipt_number) }, pdf);
+  await deliverReceipt(env, receiptId, { email: String(receipt.email), phone: String(receipt.phone), participantName: String(receipt.full_name), receiptNumber: String(receipt.receipt_number), groupName: receipt.group_name ? String(receipt.group_name) : null, groupWhatsappUrl: receipt.whatsapp_invite_url ? String(receipt.whatsapp_invite_url) : null }, pdf);
 }
 
-async function deliverReceipt(env: Bindings, receiptId: number, recipient: { email: string; phone: string; participantName: string; receiptNumber: string }, pdf: Uint8Array): Promise<void> {
+async function deliverReceipt(env: Bindings, receiptId: number, recipient: { email: string; phone: string; participantName: string; receiptNumber: string; groupName: string | null; groupWhatsappUrl: string | null }, pdf: Uint8Array): Promise<void> {
   const attachment = { name: `kuitansi-${recipient.receiptNumber}.pdf`, contentBase64: bytesToBase64(pdf) };
   try {
-    await sendTransactionalEmail(env, recipient.email, 'Kuitansi pembayaran Collaboration Day 2026', `<h1>Pembayaran telah terverifikasi</h1><p>Halo ${escapeHtml(recipient.participantName)}, pembayaran Anda telah diperiksa dan dinyatakan valid. Kuitansi elektronik resmi terlampir pada email ini.</p><p>Nomor kuitansi: <b>${escapeHtml(recipient.receiptNumber)}</b></p><p>Simpan dokumen tersebut sebagai bukti pembayaran Collaboration Day 2026.</p>`, attachment);
+    await sendTransactionalEmail(env, recipient.email, 'Pembayaran terverifikasi — Collaboration Day 2026', confirmedPaymentEmailContent(env.APP_ORIGIN, recipient), attachment);
     await env.DB.prepare("UPDATE electronic_receipts SET email_status='sent', email_sent_at=CURRENT_TIMESTAMP WHERE id=?").bind(receiptId).run();
   } catch (error) {
     await env.DB.prepare("UPDATE electronic_receipts SET email_status='failed', last_delivery_error=? WHERE id=?").bind(String(error).slice(0, 500), receiptId).run();
@@ -1303,6 +1325,16 @@ function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }
     }
   }
   return c.redirect(`${target}?message=${encodeURIComponent(message)}`, 303);
+}
+
+function queueNotificationEmail(c: Context<{ Bindings: Bindings; Variables: Variables }>, recipients: string[], subject: string, html: string): void {
+  const uniqueRecipients = [...new Set(recipients.map((email) => normalizeEmail(email)).filter(validEmail))];
+  if (!uniqueRecipients.length) return;
+  c.executionCtx.waitUntil(Promise.allSettled(uniqueRecipients.map((email) => sendTransactionalEmail(c.env, email, subject, html))).then((results) => {
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') console.error(`[email-notification] subject=${subject} recipient=${uniqueRecipients[index]}`, result.reason);
+    });
+  }));
 }
 
 app.notFound((c) => c.html(layout('Tidak ditemukan', '<main class="panel"><h1>Halaman tidak ditemukan.</h1><a class="button" href="/">Ke beranda</a></main>'), 404));
