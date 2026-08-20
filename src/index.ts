@@ -527,7 +527,13 @@ app.post('/dashboard/whatsapp/verify', async (c) => {
 
 app.post('/dashboard/social-proofs', async (c) => {
   const user = c.get('user')!;
-  const body = await c.req.parseBody();
+  let body: Awaited<ReturnType<typeof c.req.parseBody>>;
+  try {
+    body = await c.req.parseBody();
+  } catch (error) {
+    console.error(`[social-proofs:parse] user=${user.id}`, error);
+    return c.text('Berkas unggahan tidak dapat dibaca. Pilih ulang ketiga screenshot lalu coba lagi.', 400);
+  }
   if (!csrfValid(c, body.csrf_token) || user.role !== 'participant') return c.text('Permintaan tidak valid.', 403);
   if (!(await rateLimit(c, 'social-proofs', 5, 3600))) return c.text('Batas upload tercapai. Coba lagi nanti.', 429);
   const profile = await c.env.DB.prepare('SELECT * FROM participants WHERE user_id=? AND gender IS NOT NULL AND whatsapp_verified_at IS NOT NULL').bind(user.id).first<Profile>();
@@ -550,16 +556,39 @@ app.post('/dashboard/social-proofs', async (c) => {
     for (const [name, file, contentType] of validatedFiles) {
       const extension = contentType === 'image/png' ? 'png' : 'jpg';
       const key = `social-proofs/participant-${profile.id}/${name}-${randomToken(24)}.${extension}`;
-      await c.env.PROOFS.put(key, await file.arrayBuffer(), { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: name } });
+      const content = await file.arrayBuffer();
+      try {
+        await c.env.PROOFS.put(key, content, { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: name } });
+      } catch (firstError) {
+        console.warn(`[social-proofs:r2-retry] participant=${profile.id} proof=${name} size=${file.size}`, firstError);
+        try {
+          await c.env.PROOFS.put(key, content, { httpMetadata: { contentType }, customMetadata: { participantId: String(profile.id), proofType: name } });
+        } catch (error) {
+          console.error(`[social-proofs:r2-put] participant=${profile.id} proof=${name} size=${file.size}`, error);
+          throw error;
+        }
+      }
       objectKeys[name] = key;
     }
-    await c.env.DB.prepare(`INSERT INTO social_follow_proofs (participant_id, collaboration_day_instagram_key, hmps_instagram_key, hmps_tiktok_key)
-      VALUES (?, ?, ?, ?) ON CONFLICT(participant_id) DO UPDATE SET collaboration_day_instagram_key=excluded.collaboration_day_instagram_key, hmps_instagram_key=excluded.hmps_instagram_key, hmps_tiktok_key=excluded.hmps_tiktok_key, status='pending',reviewed_by_user_id=NULL,reviewed_at=NULL,rejection_reason=NULL,updated_at=CURRENT_TIMESTAMP`).bind(profile.id, objectKeys.collaboration_day_instagram, objectKeys.hmps_instagram, objectKeys.hmps_tiktok).run();
+    try {
+      await c.env.DB.prepare(`INSERT INTO social_follow_proofs (participant_id, collaboration_day_instagram_key, hmps_instagram_key, hmps_tiktok_key)
+        VALUES (?, ?, ?, ?) ON CONFLICT(participant_id) DO UPDATE SET collaboration_day_instagram_key=excluded.collaboration_day_instagram_key, hmps_instagram_key=excluded.hmps_instagram_key, hmps_tiktok_key=excluded.hmps_tiktok_key, status='pending',reviewed_by_user_id=NULL,reviewed_at=NULL,rejection_reason=NULL,updated_at=CURRENT_TIMESTAMP`).bind(profile.id, objectKeys.collaboration_day_instagram, objectKeys.hmps_instagram, objectKeys.hmps_tiktok).run();
+    } catch (error) {
+      console.error(`[social-proofs:d1-save] participant=${profile.id}`, error);
+      throw error;
+    }
   } catch (error) {
-    await Promise.all(Object.values(objectKeys).map((key) => c.env.PROOFS.delete(key)));
+    await Promise.allSettled(Object.values(objectKeys).map((key) => c.env.PROOFS.delete(key)));
     throw error;
   }
-  if (existing) await Promise.all(['collaboration_day_instagram_key', 'hmps_instagram_key', 'hmps_tiktok_key'].map((column) => existing[column] ? c.env.PROOFS.delete(existing[column]) : Promise.resolve()));
+  if (existing) {
+    const oldKeys = ['collaboration_day_instagram_key', 'hmps_instagram_key', 'hmps_tiktok_key'].map((column) => existing[column]).filter(Boolean);
+    c.executionCtx.waitUntil(Promise.allSettled(oldKeys.map((key) => c.env.PROOFS.delete(key))).then((results) => {
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') console.error(`[social-proofs:r2-cleanup] participant=${profile.id} key=${oldKeys[index]}`, result.reason);
+      });
+    }));
+  }
   return redirectMessage(c, 'Ketiga bukti follow berhasil disimpan.');
 });
 
