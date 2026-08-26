@@ -9,6 +9,7 @@
   const url = new URL(location.href);
   if (url.searchParams.has('message')) {
     url.searchParams.delete('message');
+    url.searchParams.delete('type');
     history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 })();

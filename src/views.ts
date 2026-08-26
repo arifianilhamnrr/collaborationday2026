@@ -393,6 +393,7 @@ export function participantDashboard(
   socialProofSubmitted: boolean | string = false,
   admissionProofSubmitted = false,
   message = "",
+  messageType: "success" | "error" = "success",
 ): string {
   let content = "";
   const socialProofStatus = socialProofSubmitted === true ? "verified" : String(socialProofSubmitted || "");
@@ -431,11 +432,12 @@ export function participantDashboard(
     .replace("Langkah 4 dari 6", "Langkah 3 dari 5")
     .replace("Langkah 5 dari 6", "Langkah 4 dari 5")
     .replace("Langkah 6 dari 6", "Langkah 5 dari 5")
-    .replace("Jenis kelamin digunakan untuk menyeimbangkan komposisi anggota setiap kelompok.", "Nomor WhatsApp langsung disimpan tanpa OTP. Pastikan nomor sudah benar. Jenis kelamin digunakan untuk menyeimbangkan komposisi kelompok.");
+    .replace("Jenis kelamin digunakan untuk menyeimbangkan komposisi anggota setiap kelompok.", "Nomor WhatsApp langsung disimpan tanpa OTP. Pastikan nomor sudah benar. Jenis kelamin digunakan untuk menyeimbangkan komposisi kelompok.")
+    .replace('name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08xxxxxxxxxx" required maxlength="24"', 'name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08xxxxxxxxxx" required maxlength="24" pattern="[+0-9][0-9 +().-]{8,23}" title="Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx"');
   if (profile?.phone && profile.group_name && !registration) content = `<div class="notice"><b>Kelompok ${escapeHtml(profile.group_name)}</b><br>Tautan grup WhatsApp tersedia setelah pembayaran terverifikasi.</div>${content}`;
   return dashboardLayout(
     "Dashboard Peserta",
-    `${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<div class="participant-card">${content}</div>`,
+    `${message ? `<div class="notice${messageType === "error" ? " error" : ""}">${escapeHtml(message)}</div>` : ""}<div class="participant-card">${content}</div>`,
     user,
     "overview",
   );
@@ -476,18 +478,20 @@ export function accountProfilePage(
   user: SessionUser,
   staff: StaffProfile | null,
   message = "",
+  messageType: "success" | "error" = "success",
 ): string {
   const csrf = `<input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}">`;
   const roleLabel = user.role === "admin" ? "Administrator" : user.role === "bendahara" ? "Bendahara" : "Pendamping";
   const whatsappStatus = staff?.phone_e164 ? "Tersimpan" : "Belum diisi";
-  const phoneField = staff ? `<label>Nomor WhatsApp${user.role === "bendahara" ? " (opsional)" : ""}<input name="phone" inputmode="tel" maxlength="18" ${user.role === "pendamping" ? "required" : ""} value="${escapeHtml(staff.phone_e164 || "")}" placeholder="08xxxxxxxxxx"></label>` : "";
+  const phoneField = staff ? `<label>Nomor WhatsApp${user.role === "bendahara" ? " (opsional)" : ""}<input name="phone" inputmode="tel" maxlength="24" pattern="[+0-9][0-9 +().-]{8,23}" title="Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx" ${user.role === "pendamping" ? "required" : ""} value="${escapeHtml(staff.phone_e164 || "")}" placeholder="08xxxxxxxxxx"></label>` : "";
   const otpControls = "";
-  return dashboardLayout(
+  const page = dashboardLayout(
     "Profil",
     `${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<div class="page-head"><div><h2>Profil akun.</h2><p>Kelola identitas staf dan keamanan akunmu.</p></div></div><div class="profile-meta"><div><small>Email</small><b>${escapeHtml(user.email)}</b></div><div><small>Role</small><b>${roleLabel}</b></div><div><small>${staff ? "Status WhatsApp" : "Status email"}</small><b>${staff ? whatsappStatus : user.email_verified_at ? "Terverifikasi" : "Belum verifikasi"}</b></div></div><div class="app-grid"><section class="app-card half"><h3>Informasi profil</h3><form class="stack" method="post" action="/dashboard/account">${csrf}<label>Nama lengkap<input name="display_name" required minlength="2" maxlength="100" autocomplete="name" value="${escapeHtml(user.display_name || staff?.full_name || "")}"></label>${phoneField}<button type="submit">Simpan profil</button></form></section><section class="app-card half"><h3>Ubah password</h3><form class="stack" method="post" action="/dashboard/account/password">${csrf}<label>Password saat ini<input name="current_password" type="password" required autocomplete="current-password"></label><label>Password baru<input name="new_password" type="password" minlength="10" maxlength="128" required autocomplete="new-password"></label><label>Ulangi password baru<input name="confirm_password" type="password" minlength="10" maxlength="128" required autocomplete="new-password"></label><button type="submit">Perbarui password</button></form></section>${otpControls}</div>`,
     user,
     "profile",
   );
+  return messageType === "error" ? page.replace('<div class="notice">', '<div class="notice error">') : page;
 }
 
 export function pendampingDashboardPage(
@@ -497,6 +501,7 @@ export function pendampingDashboardPage(
   members: Record<string, unknown>[],
   cashPayments: Record<string, unknown>[],
   message = "",
+  _messageType: "success" | "error" = "success",
 ): string {
   const csrf = `<input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}">`;
   if (!user.email_verified_at) {

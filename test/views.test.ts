@@ -100,6 +100,14 @@ describe('participant dashboard', () => {
     expect(html).not.toContain('action="/dashboard/social-proofs"');
   });
 
+  it('renders profile validation failures as an in-dashboard error notice', () => {
+    const html = participantDashboard(user, null, edition, null, methods, false, false, 'Nomor WhatsApp tidak valid.', 'error');
+
+    expect(html).toContain('<div class="notice error">Nomor WhatsApp tidak valid.</div>');
+    expect(html).toContain('action="/dashboard/profile"');
+    expect(html).toContain('pattern="[+0-9][0-9 +().-]{8,23}"');
+  });
+
   it('shows an automatically assigned group before event registration', () => {
     const html = participantDashboard(user, { ...profile, group_name: 'Horison', group_whatsapp_url: 'https://chat.whatsapp.com/private-group' }, edition, null, methods);
 

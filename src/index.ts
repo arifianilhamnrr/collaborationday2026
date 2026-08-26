@@ -189,6 +189,7 @@ app.use('/dashboard/*', async (c, next) => {
 app.get('/dashboard', async (c) => {
   const user = c.get('user')!;
   const message = c.req.query('message') ?? '';
+  const messageType = c.req.query('type') === 'error' ? 'error' : 'success';
   if (user.role !== 'participant' && !user.email_verified_at) return c.html(staffVerificationPage(user, message));
   if (user.role === 'admin' && user.email_verified_at) {
     const counts = await c.env.DB.prepare(`SELECT (SELECT COUNT(*) FROM registrations WHERE status!='cancelled') participants, (SELECT COUNT(*) FROM payment_submissions WHERE status='pending') pending, (SELECT COUNT(*) FROM registrations WHERE status='confirmed') confirmed`).first<Record<string, number>>();
@@ -204,7 +205,7 @@ app.get('/dashboard', async (c) => {
     const group = await c.env.DB.prepare(`SELECT pg.* FROM participant_groups pg JOIN event_editions e ON e.id=pg.edition_id WHERE pg.pendamping_user_id=? AND e.status='published' ORDER BY e.year DESC LIMIT 1`).bind(user.id).first<Record<string, unknown>>();
     const members = group ? (await c.env.DB.prepare(`SELECT p.id,p.full_name,p.phone,sfp.id AS social_proof_id,sfp.status AS social_proof_status,sfp.rejection_reason FROM participant_group_memberships pgm JOIN participants p ON p.id=pgm.participant_id LEFT JOIN social_follow_proofs sfp ON sfp.participant_id=p.id WHERE pgm.group_id=? ORDER BY p.full_name`).bind(group.id).all<Record<string, unknown>>()).results : [];
     const cashPayments = group ? (await c.env.DB.prepare(`SELECT ps.id,r.public_id,r.amount_due,p.full_name,COALESCE((SELECT SUM(cpe.amount_received) FROM cash_payment_entries cpe WHERE cpe.payment_submission_id=ps.id),0) AS amount_paid,(SELECT cpe.settlement_timing FROM cash_payment_entries cpe WHERE cpe.payment_submission_id=ps.id ORDER BY cpe.id DESC LIMIT 1) AS last_timing FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id JOIN registrations r ON r.id=ps.registration_id JOIN participants p ON p.id=r.participant_id JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id WHERE pgm.group_id=? AND pm.type='cash' AND ps.status='pending' ORDER BY ps.submitted_at`).bind(group.id).all<Record<string, unknown>>()).results : [];
-    return c.html(pendampingDashboardPage(user, staff, group, members, cashPayments, message));
+    return c.html(pendampingDashboardPage(user, staff, group, members, cashPayments, message, messageType));
   }
   if (user.role !== 'participant') return c.text('Role akun tidak dikenali.', 403);
   let profile = await c.env.DB.prepare(`SELECT p.*,
@@ -234,7 +235,7 @@ app.get('/dashboard', async (c) => {
     (SELECT COALESCE(sp.full_name,u.display_name,u.email) FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id LEFT JOIN staff_profiles sp ON sp.user_id=u.id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS pendamping_name
     FROM registrations r JOIN event_editions e ON e.id=r.edition_id WHERE r.participant_id=? ORDER BY r.id DESC LIMIT 1`).bind(profile.id).first<Record<string, unknown>>() : null;
   const methods = registration ? (await c.env.DB.prepare('SELECT * FROM payment_methods WHERE edition_id=? AND is_active=1 ORDER BY sort_order').bind(registration.edition_id).all<PaymentMethod>()).results : [];
-  return c.html(participantDashboard(user, profile, edition, registration, methods, socialProof?.status ?? '', Boolean(admissionProof), message));
+  return c.html(participantDashboard(user, profile, edition, registration, methods, socialProof?.status ?? '', Boolean(admissionProof), message, messageType));
 });
 
 app.get('/dashboard/payments', async (c) => {
@@ -256,28 +257,29 @@ app.get('/dashboard/account', async (c) => {
   const user = c.get('user')!;
   if (!['admin', 'bendahara', 'pendamping'].includes(user.role) || !user.email_verified_at) return c.text('Tidak diizinkan.', 403);
   const staff = user.role === 'admin' ? null : await c.env.DB.prepare('SELECT * FROM staff_profiles WHERE user_id=?').bind(user.id).first<StaffProfile>();
-  return c.html(accountProfilePage(user, staff, c.req.query('message') ?? ''));
+  return c.html(accountProfilePage(user, staff, c.req.query('message') ?? '', c.req.query('type') === 'error' ? 'error' : 'success'));
 });
 
 app.post('/dashboard/account', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.parseBody();
   const displayName = String(body.display_name ?? '').trim();
-  if (!['admin', 'bendahara', 'pendamping'].includes(user.role) || !csrfValid(c, body.csrf_token) || displayName.length < 2 || displayName.length > 100) return c.text('Profil tidak valid.', 400);
+  if (!['admin', 'bendahara', 'pendamping'].includes(user.role) || !csrfValid(c, body.csrf_token)) return c.text('Permintaan tidak valid.', 403);
+  if (displayName.length < 2 || displayName.length > 100) return redirectMessage(c, 'Nama lengkap harus terdiri dari 2–100 karakter.', 'error');
   const statements: D1PreparedStatement[] = [
     c.env.DB.prepare('UPDATE users SET display_name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(displayName, user.id),
   ];
   if (user.role !== 'admin') {
     const rawPhone = String(body.phone ?? '').trim();
     const phone = rawPhone ? normalizeIndonesianPhone(rawPhone) : null;
-    if ((user.role === 'pendamping' && !phone) || (rawPhone && !phone)) return c.text('Nomor WhatsApp tidak valid.', 400);
+    if ((user.role === 'pendamping' && !phone) || (rawPhone && !phone)) return redirectMessage(c, 'Nomor WhatsApp tidak valid. Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx.', 'error');
     statements.push(c.env.DB.prepare(`UPDATE staff_profiles SET full_name=?,phone_e164=?,whatsapp_verified_at=CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,updated_at=CURRENT_TIMESTAMP WHERE user_id=?`).bind(displayName, phone, phone, user.id));
   }
   statements.push(c.env.DB.prepare("INSERT INTO audit_logs (actor_user_id,action,subject_type,subject_id) VALUES (?,'account.profile_updated','user',?)").bind(user.id, String(user.id)));
   try {
     await c.env.DB.batch(statements);
   } catch (error) {
-    if (String(error).includes('UNIQUE')) return c.text('Nomor WhatsApp sudah digunakan akun lain.', 409);
+    if (String(error).includes('UNIQUE')) return redirectMessage(c, 'Nomor WhatsApp sudah digunakan akun lain.', 'error');
     throw error;
   }
   return redirectMessage(c, 'Profil berhasil diperbarui.');
@@ -387,15 +389,18 @@ app.post('/dashboard/pendamping/profile', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.parseBody();
   const fullName = String(body.full_name ?? '').trim();
-  const phone = normalizeIndonesianPhone(String(body.phone ?? ''));
-  if (user.role !== 'pendamping' || !user.email_verified_at || !csrfValid(c, body.csrf_token) || fullName.length < 2 || fullName.length > 100 || !phone) return c.text('Profil pendamping tidak valid.', 400);
+  const rawPhone = String(body.phone ?? '').trim();
+  const phone = normalizeIndonesianPhone(rawPhone);
+  if (user.role !== 'pendamping' || !user.email_verified_at || !csrfValid(c, body.csrf_token)) return c.text('Permintaan tidak valid.', 403);
+  if (fullName.length < 2 || fullName.length > 100) return redirectMessage(c, 'Nama lengkap harus terdiri dari 2–100 karakter.', 'error');
+  if (!phone) return redirectMessage(c, 'Nomor WhatsApp tidak valid. Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx.', 'error');
   try {
     await c.env.DB.batch([
       c.env.DB.prepare(`INSERT INTO staff_profiles (user_id,role,full_name,phone_e164,whatsapp_verified_at) VALUES (?,'pendamping',?,?,CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET full_name=excluded.full_name,phone_e164=excluded.phone_e164,whatsapp_verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP`).bind(user.id, fullName, phone),
       c.env.DB.prepare('UPDATE users SET display_name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(fullName, user.id),
     ]);
   } catch (error) {
-    if (String(error).includes('UNIQUE')) return c.text('Nomor WhatsApp sudah digunakan akun lain.', 409);
+    if (String(error).includes('UNIQUE')) return redirectMessage(c, 'Nomor WhatsApp sudah digunakan akun lain.', 'error');
     throw error;
   }
   return redirectMessage(c, 'Profil pendamping disimpan.');
@@ -485,15 +490,15 @@ app.post('/dashboard/profile', async (c) => {
   const gender = String(body.gender ?? '');
   if (fullName.length < 2 || fullName.length > 100) {
     console.warn(`[participant-profile:validation] user=${user.id} field=name length=${fullName.length}`);
-    return c.text('Nama lengkap harus terdiri dari 2–100 karakter.', 400);
+    return redirectMessage(c, 'Nama lengkap harus terdiri dari 2–100 karakter.', 'error');
   }
   if (!['male', 'female'].includes(gender)) {
     console.warn(`[participant-profile:validation] user=${user.id} field=gender selected=${Boolean(gender)}`);
-    return c.text('Pilih jenis kelamin sebelum menyimpan profil.', 400);
+    return redirectMessage(c, 'Pilih jenis kelamin sebelum menyimpan profil.', 'error');
   }
   if (!phone) {
     console.warn(`[participant-profile:validation] user=${user.id} field=phone digits=${rawPhone.replace(/\D/g, '').length}`);
-    return c.text('Nomor WhatsApp tidak valid. Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx.', 400);
+    return redirectMessage(c, 'Nomor WhatsApp tidak valid. Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx.', 'error');
   }
   const existing = await c.env.DB.prepare(`SELECT p.id,p.phone,p.gender,p.whatsapp_verified_at,
     EXISTS(SELECT 1 FROM participant_group_memberships WHERE participant_id=p.id) AS has_membership
@@ -1345,7 +1350,7 @@ async function deliverReceipt(env: Bindings, receiptId: number, recipient: { ema
   await env.DB.prepare("UPDATE electronic_receipts SET whatsapp_status='skipped' WHERE id=?").bind(receiptId).run();
 }
 
-function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }>, message: string) {
+function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }>, message: string, type: 'success' | 'error' = 'success') {
   const referer = c.req.header('Referer');
   let target = '/dashboard';
   if (referer) {
@@ -1356,7 +1361,8 @@ function redirectMessage(c: Context<{ Bindings: Bindings; Variables: Variables }
       target = '/dashboard';
     }
   }
-  return c.redirect(`${target}?message=${encodeURIComponent(message)}`, 303);
+  const query = new URLSearchParams({ message, type });
+  return c.redirect(`${target}?${query.toString()}`, 303);
 }
 
 function queueNotificationEmail(c: Context<{ Bindings: Bindings; Variables: Variables }>, recipients: string[], subject: string, html: string): void {
