@@ -342,6 +342,7 @@ export function authPage(
   message = "",
   token = "",
   turnstileSiteKey = "",
+  messageType: "success" | "error" = "success",
 ): string {
   const turnstile = turnstileSiteKey
     ? `<div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}"></div>`
@@ -359,13 +360,13 @@ export function authPage(
     ],
     forgot: [
       "Lupa password",
-      "Kami akan mengirim tautan reset jika akun ditemukan.",
-      `<label>Email<input name="email" type="email" maxlength="254" required autocomplete="email"></label><button type="submit">Kirim tautan reset</button>`,
+      "Masukkan email akunmu untuk menerima tautan reset password.",
+      `<label>Email<input name="email" type="email" maxlength="254" required autocomplete="email"></label>${turnstile}<button type="submit">Kirim tautan reset</button>`,
     ],
     reset: [
       "Password baru",
       "Gunakan minimal 10 karakter.",
-      `<input type="hidden" name="token" value="${escapeHtml(token)}"><label>Password baru<input name="password" type="password" minlength="10" maxlength="128" required autocomplete="new-password"></label><button type="submit">Simpan password</button>`,
+      token ? `<input type="hidden" name="token" value="${escapeHtml(token)}"><label>Password baru<input name="password" type="password" minlength="10" maxlength="128" required autocomplete="new-password"></label><button type="submit">Simpan password</button>` : '<a class="button" href="/forgot-password">Minta tautan reset baru</a>',
     ],
   }[kind];
   const script = turnstileSiteKey
@@ -373,7 +374,7 @@ export function authPage(
     : "";
   return layout(
     content[0],
-    `<main class="panel"><span class="eyebrow">Akun Collaboration Day</span><h1>${content[0]}</h1><p>${content[1]}</p>${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<form class="stack" method="post">${content[2]}</form></main>${script}`,
+    `<main class="panel"><span class="eyebrow">Akun Collaboration Day</span><h1>${content[0]}</h1><p>${content[1]}</p>${message ? `<div class="notice${messageType === "error" ? " error" : ""}">${escapeHtml(message)}</div>` : ""}<form class="stack" method="post">${content[2]}</form></main>${script}`,
   );
 }
 

@@ -153,30 +153,48 @@ app.post('/verify-email', async (c) => {
   return c.redirect('/dashboard', 303);
 });
 
-app.get('/forgot-password', (c) => c.html(authPage('forgot')));
+app.get('/forgot-password', (c) => c.html(authPage('forgot', '', '', c.env.TURNSTILE_SITE_KEY)));
 app.post('/forgot-password', async (c) => {
   const body = await c.req.parseBody();
   const email = normalizeEmail(String(body.email ?? ''));
+  if (!(await rateLimit(c, 'forgot-password', 5, 3600))) return c.html(authPage('forgot', 'Terlalu banyak permintaan reset. Coba lagi nanti.', '', c.env.TURNSTILE_SITE_KEY, 'error'), 429);
+  if (!(await verifyTurnstile(c, body['cf-turnstile-response']))) return c.html(authPage('forgot', 'Verifikasi keamanan belum berhasil.', '', c.env.TURNSTILE_SITE_KEY, 'error'), 400);
+  if (!validEmail(email)) return c.html(authPage('forgot', 'Masukkan alamat email yang valid.', '', c.env.TURNSTILE_SITE_KEY, 'error'), 400);
   const user = await c.env.DB.prepare("SELECT id, email FROM users WHERE email=? AND status='active'").bind(email).first<{ id: number; email: string }>();
-  if (user) await issuePasswordReset(c.env, user.id, user.email);
-  return c.html(authPage('forgot', 'Jika akun ditemukan, tautan reset telah dikirim.'));
+  if (!user) return c.html(authPage('forgot', 'Akun dengan email tersebut tidak ditemukan.', '', c.env.TURNSTILE_SITE_KEY, 'error'), 404);
+  try {
+    await issuePasswordReset(c.env, user.id, user.email);
+  } catch (error) {
+    console.error(`[password-reset:delivery] user=${user.id}`, error);
+    return c.html(authPage('forgot', 'Email reset belum dapat dikirim. Coba lagi beberapa saat lagi.', '', c.env.TURNSTILE_SITE_KEY, 'error'), 503);
+  }
+  return c.html(authPage('forgot', 'Email reset password telah dikirim. Periksa inbox dan folder spam.', '', c.env.TURNSTILE_SITE_KEY, 'success'));
 });
-app.get('/reset-password', (c) => c.html(authPage('reset', '', c.req.query('token') ?? '')));
+app.get('/reset-password', async (c) => {
+  const token = c.req.query('token') ?? '';
+  if (!token) return c.html(authPage('reset', 'Tautan reset tidak lengkap. Minta tautan baru.', '', '', 'error'), 400);
+  const tokenHash = await sha256(`${token}:${c.env.TOKEN_PEPPER}`);
+  const challenge = await c.env.DB.prepare("SELECT id FROM password_reset_challenges WHERE token_hash=? AND consumed_at IS NULL AND datetime(expires_at)>datetime('now')").bind(tokenHash).first();
+  if (!challenge) return c.html(authPage('reset', 'Tautan reset tidak valid, sudah digunakan, atau kedaluwarsa.', '', '', 'error'), 400);
+  return c.html(authPage('reset', '', token));
+});
 app.post('/reset-password', async (c) => {
   const body = await c.req.parseBody();
   const token = String(body.token ?? '');
   const password = String(body.password ?? '');
-  if (!validPassword(password)) return c.html(authPage('reset', 'Password harus 10–128 karakter.', token), 400);
+  if (!validPassword(password)) return c.html(authPage('reset', 'Password harus 10–128 karakter.', token, '', 'error'), 400);
   const tokenHash = await sha256(`${token}:${c.env.TOKEN_PEPPER}`);
   const challenge = await c.env.DB.prepare("SELECT id, user_id FROM password_reset_challenges WHERE token_hash=? AND consumed_at IS NULL AND datetime(expires_at)>datetime('now')").bind(tokenHash).first<{ id: number; user_id: number }>();
-  if (!challenge) return c.html(authPage('reset', 'Tautan reset tidak valid atau sudah kedaluwarsa.'), 400);
+  if (!challenge) return c.html(authPage('reset', 'Tautan reset tidak valid, sudah digunakan, atau kedaluwarsa.', '', '', 'error'), 400);
   const passwordHash = await hashPassword(password);
+  const consumed = await c.env.DB.prepare("UPDATE password_reset_challenges SET consumed_at=CURRENT_TIMESTAMP WHERE id=? AND consumed_at IS NULL AND datetime(expires_at)>datetime('now')").bind(challenge.id).run();
+  if (!consumed.meta.changes) return c.html(authPage('reset', 'Tautan reset sudah digunakan. Minta tautan baru.', '', '', 'error'), 409);
   await c.env.DB.batch([
     c.env.DB.prepare('UPDATE users SET password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(passwordHash, challenge.user_id),
-    c.env.DB.prepare('UPDATE password_reset_challenges SET consumed_at=CURRENT_TIMESTAMP WHERE id=?').bind(challenge.id),
+    c.env.DB.prepare('UPDATE password_reset_challenges SET consumed_at=COALESCE(consumed_at,CURRENT_TIMESTAMP) WHERE user_id=?').bind(challenge.user_id),
     c.env.DB.prepare('UPDATE sessions SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=? AND revoked_at IS NULL').bind(challenge.user_id),
   ]);
-  return c.html(authPage('login', 'Password berhasil diperbarui. Silakan masuk.'));
+  return c.html(authPage('login', 'Password berhasil diperbarui. Silakan masuk.', '', c.env.TURNSTILE_SITE_KEY, 'success'));
 });
 
 app.use('/dashboard/*', async (c, next) => {
@@ -1319,10 +1337,16 @@ async function issuePasswordReset(env: Bindings, userId: number, email: string):
   const token = randomToken(32);
   const tokenHash = await sha256(`${token}:${env.TOKEN_PEPPER}`);
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  await env.DB.prepare('INSERT INTO password_reset_challenges (user_id, token_hash, expires_at) VALUES (?, ?, ?)').bind(userId, tokenHash, expiresAt).run();
+  const result = await env.DB.prepare('INSERT INTO password_reset_challenges (user_id, token_hash, expires_at) VALUES (?, ?, ?)').bind(userId, tokenHash, expiresAt).run();
   const url = `${env.APP_ORIGIN}/reset-password?token=${encodeURIComponent(token)}`;
   const subject = await settingValue(env, 'brevo_reset_subject', 'Reset password Collaboration Day');
-  await sendTransactionalEmail(env, email, subject, `<h1>Atur ulang password Anda</h1><p>Kami menerima permintaan untuk mengganti password akun Collaboration Day 2026. Gunakan tombol berikut untuk membuat password baru.</p><p><a href="${escapeHtml(url)}">Buat password baru</a></p><p><b>Tautan berlaku selama satu jam.</b> Jika Anda tidak meminta perubahan ini, password saat ini tetap aman dan tidak perlu melakukan apa pun.</p>`);
+  try {
+    await sendTransactionalEmail(env, email, subject, `<h1>Atur ulang password Anda</h1><p>Kami menerima permintaan untuk mengganti password akun Collaboration Day 2026. Gunakan tombol berikut untuk membuat password baru.</p><p><a href="${escapeHtml(url)}">Buat password baru</a></p><p><b>Tautan berlaku selama satu jam.</b> Jika Anda tidak meminta perubahan ini, password saat ini tetap aman dan tidak perlu melakukan apa pun.</p>`);
+    await env.DB.prepare('UPDATE password_reset_challenges SET consumed_at=CURRENT_TIMESTAMP WHERE user_id=? AND id!=? AND consumed_at IS NULL').bind(userId, result.meta.last_row_id).run();
+  } catch (error) {
+    await env.DB.prepare('DELETE FROM password_reset_challenges WHERE id=? AND consumed_at IS NULL').bind(result.meta.last_row_id).run();
+    throw error;
+  }
 }
 
 async function settingValue(env: Bindings, key: string, fallback: string): Promise<string> {

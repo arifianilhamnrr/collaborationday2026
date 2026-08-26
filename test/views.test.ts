@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Profile, SessionUser } from '../src/types';
-import { accountProfilePage, adminEventPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, landing, participantDashboard, paymentMethodsPage, pendampingDashboardPage, temporaryFailurePage, whatsarPairingPage, type Edition, type PaymentMethod } from '../src/views';
+import { accountProfilePage, adminEventPage, adminIntegrationsPage, adminOverviewPage, adminParticipantsPage, adminPaymentsPage, adminTeamPage, authPage, landing, participantDashboard, paymentMethodsPage, pendampingDashboardPage, temporaryFailurePage, whatsarPairingPage, type Edition, type PaymentMethod } from '../src/views';
 
 const user: SessionUser = {
   id: 1,
@@ -35,6 +35,33 @@ describe('safe error page', () => {
     expect(html).toContain('href="/dashboard"');
     expect(html).not.toContain('Referensi');
     expect(html).not.toContain('Coba lagi');
+  });
+});
+
+describe('password reset pages', () => {
+  it('distinguishes missing accounts from successfully sent reset email', () => {
+    const missing = authPage('forgot', 'Akun dengan email tersebut tidak ditemukan.', '', 'turnstile-key', 'error');
+    const sent = authPage('forgot', 'Email reset password telah dikirim.', '', 'turnstile-key', 'success');
+
+    expect(missing).toContain('<div class="notice error">Akun dengan email tersebut tidak ditemukan.</div>');
+    expect(sent).toContain('<div class="notice">Email reset password telah dikirim.</div>');
+    expect(sent).toContain('class="cf-turnstile"');
+  });
+
+  it('does not render a password form for an invalid reset token', () => {
+    const html = authPage('reset', 'Tautan reset tidak valid.', '', '', 'error');
+
+    expect(html).toContain('Minta tautan reset baru');
+    expect(html).not.toContain('name="password"');
+    expect(html).not.toContain('name="token"');
+  });
+
+  it('renders Turnstile on the login form shown after reset succeeds', () => {
+    const html = authPage('login', 'Password berhasil diperbarui. Silakan masuk.', '', 'turnstile-key', 'success');
+
+    expect(html).toContain('class="cf-turnstile"');
+    expect(html).toContain('data-sitekey="turnstile-key"');
+    expect(html).toContain('Password berhasil diperbarui. Silakan masuk.');
   });
 });
 
