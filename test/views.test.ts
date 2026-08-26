@@ -376,6 +376,28 @@ describe('admin dashboard pages', () => {
     expect(html).toContain('data-group="Orion"');
     expect(html).toContain('<script src="/client-tables.js?v=20260827-filters" defer></script>');
   });
+
+  it('previews admission and all social proofs in a private modal', () => {
+    const html = adminParticipantsPage(admin, [{
+      id: 1,
+      full_name: 'Ayu',
+      email: 'ayu@example.com',
+      phone: '+6281',
+      group_name: 'Orion',
+      admission_proof_id: 12,
+      social_proof_id: 34,
+    }]);
+
+    expect(html).toContain('id="participant-proof-dialog"');
+    expect(html).toContain('id="participant-proof-frame"');
+    expect(html).toContain('id="participant-proof-open"');
+    expect(html.match(/data-participant-proof/g)).toHaveLength(4);
+    expect(html).toContain('data-proof-url="/dashboard/admission-proofs/12?preview=1"');
+    expect(html).toContain('data-proof-url="/dashboard/social-proofs/34/collaboration-day-instagram?preview=1"');
+    expect(html).toContain('data-proof-url="/dashboard/social-proofs/34/hmps-instagram?preview=1"');
+    expect(html).toContain('data-proof-url="/dashboard/social-proofs/34/hmps-tiktok?preview=1"');
+    expect(html).toContain('<script src="/participant-proof-preview.js?v=20260827" defer></script>');
+  });
 });
 
 describe('admin payment methods table', () => {

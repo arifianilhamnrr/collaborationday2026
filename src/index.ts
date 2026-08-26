@@ -42,7 +42,7 @@ app.use('*', async (c, next) => {
   }
   c.set('user', await loadSession(c));
   await next();
-  const proofPreview = /^\/dashboard\/payments\/[^/]+\/proof$/.test(c.req.path) && c.req.query('preview') === '1';
+  const proofPreview = (/^\/dashboard\/payments\/[^/]+\/proof$/.test(c.req.path) || /^\/dashboard\/admission-proofs\/[^/]+$/.test(c.req.path) || /^\/dashboard\/social-proofs\/[^/]+\/[^/]+$/.test(c.req.path)) && c.req.query('preview') === '1';
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('X-Frame-Options', proofPreview ? 'SAMEORIGIN' : 'DENY');
@@ -663,7 +663,8 @@ app.get('/dashboard/social-proofs/:id/:kind', async (c) => {
   const object = await c.env.PROOFS.get(proof.object_key);
   if (!object) return c.text('Berkas tidak ditemukan.', 404);
   const contentType = object.httpMetadata?.contentType === 'image/png' ? 'image/png' : 'image/jpeg';
-  return new Response(object.body, { headers: { 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename="${c.req.param('kind')}.${contentType === 'image/png' ? 'png' : 'jpg'}"`, 'X-Content-Type-Options': 'nosniff' } });
+  const disposition = c.req.query('preview') === '1' ? 'inline' : 'attachment';
+  return new Response(object.body, { headers: { 'Content-Type': contentType, 'Cache-Control': 'private, no-store', 'Content-Disposition': `${disposition}; filename="${c.req.param('kind')}.${contentType === 'image/png' ? 'png' : 'jpg'}"`, 'X-Content-Type-Options': 'nosniff' } });
 });
 
 app.post('/dashboard/social-proofs/:id/review', async (c) => {
@@ -720,7 +721,8 @@ app.get('/dashboard/admission-proofs/:id', async (c) => {
   const object = await c.env.PROOFS.get(proof.object_key);
   if (!object) return c.text('Berkas tidak ditemukan.', 404);
   const filename = proof.original_filename.replace(/[^A-Za-z0-9._-]/g, '_');
-  return new Response(object.body, { headers: { 'Content-Type': proof.content_type, 'Cache-Control': 'private, no-store', 'Content-Disposition': `attachment; filename="${filename}"`, 'X-Content-Type-Options': 'nosniff' } });
+  const disposition = c.req.query('preview') === '1' ? 'inline' : 'attachment';
+  return new Response(object.body, { headers: { 'Content-Type': proof.content_type, 'Cache-Control': 'private, no-store', 'Content-Disposition': `${disposition}; filename="${filename}"`, 'X-Content-Type-Options': 'nosniff' } });
 });
 
 app.post('/dashboard/register', async (c) => {
