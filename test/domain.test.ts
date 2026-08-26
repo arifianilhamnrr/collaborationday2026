@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature } from '../src/domain';
+import { detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature } from '../src/domain';
 
 describe('domain utilities', () => {
   it('normalizes and validates email', () => {
@@ -39,6 +39,12 @@ describe('domain utilities', () => {
     expect(normalizeIndonesianPhone('0812-3456-7890')).toBe('+6281234567890');
     expect(normalizeIndonesianPhone('+62 812 3456 7890')).toBe('+6281234567890');
     expect(normalizeIndonesianPhone('123')).toBeNull();
+  });
+
+  it('canonicalizes WhatsApp group invites and rejects unrelated URLs', () => {
+    expect(normalizeWhatsappInviteUrl('https://chat.whatsapp.com/HDlIWkOPzc31jFLOgqdySt?s=cl&p=a&ilr=1')).toBe('https://chat.whatsapp.com/HDlIWkOPzc31jFLOgqdySt');
+    expect(normalizeWhatsappInviteUrl('https://chat.whatsapp.com/HDlIWkOPzc31jFLOgqdySt/')).toBe('https://chat.whatsapp.com/HDlIWkOPzc31jFLOgqdySt');
+    expect(normalizeWhatsappInviteUrl('https://example.com/HDlIWkOPzc31jFLOgqdySt')).toBeNull();
   });
 
   it('validates upload signatures instead of trusting MIME alone', async () => {

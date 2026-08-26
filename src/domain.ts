@@ -17,6 +17,17 @@ export function normalizeIndonesianPhone(value: string): string | null {
   return /^628\d{8,11}$/.test(normalized) ? `+${normalized}` : null;
 }
 
+export function normalizeWhatsappInviteUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    const match = url.pathname.match(/^\/([A-Za-z0-9_-]{10,})\/?$/);
+    if (url.protocol !== 'https:' || url.hostname !== 'chat.whatsapp.com' || !match) return null;
+    return `https://chat.whatsapp.com/${match[1]}`;
+  } catch {
+    return null;
+  }
+}
+
 export function formatRupiah(amount: number): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
 }

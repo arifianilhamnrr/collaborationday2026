@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
 import { confirmedPaymentEmailContent, sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
-import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
+import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
 import { qrisWithAmount } from './qris';
 import { rateLimit, verifyTurnstile } from './security';
@@ -404,10 +404,25 @@ app.post('/dashboard/pendamping/profile', async (c) => {
 app.post('/dashboard/pendamping/group', async (c) => {
   const user = c.get('user')!;
   const body = await c.req.parseBody();
-  const inviteUrl = String(body.whatsapp_invite_url ?? '').trim();
-  if (user.role !== 'pendamping' || !csrfValid(c, body.csrf_token) || (inviteUrl !== '' && !/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9_/?=&-]{10,}$/.test(inviteUrl))) return c.text('Tautan grup WhatsApp tidak valid.', 400);
-  const result = await c.env.DB.prepare(`UPDATE participant_groups SET whatsapp_invite_url=?,updated_at=CURRENT_TIMESTAMP WHERE pendamping_user_id=? AND edition_id=(SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC LIMIT 1)`).bind(inviteUrl, user.id).run();
-  if (!result.meta.changes) return c.text('Kelompok tidak ditemukan.', 404);
+  const rawInviteUrl = String(body.whatsapp_invite_url ?? '').trim();
+  const inviteUrl = rawInviteUrl ? normalizeWhatsappInviteUrl(rawInviteUrl) : null;
+  if (user.role !== 'pendamping' || !csrfValid(c, body.csrf_token) || (rawInviteUrl && !inviteUrl)) return c.text('Tautan grup WhatsApp tidak valid.', 400);
+  const group = await c.env.DB.prepare(`SELECT pg.id,pg.edition_id,pg.whatsapp_invite_url FROM participant_groups pg JOIN event_editions e ON e.id=pg.edition_id WHERE pg.pendamping_user_id=? AND e.status='published' ORDER BY e.year DESC LIMIT 1`).bind(user.id).first<{ id: number; edition_id: number; whatsapp_invite_url: string | null }>();
+  if (!group) return c.text('Kelompok tidak ditemukan.', 404);
+  const duplicate = inviteUrl ? await c.env.DB.prepare('SELECT name FROM participant_groups WHERE edition_id=? AND whatsapp_invite_url=? AND id!=?').bind(group.edition_id, inviteUrl, group.id).first<{ name: string }>() : null;
+  if (duplicate) return c.text(`Tautan tersebut sudah digunakan kelompok ${duplicate.name}. Pastikan menyalin tautan grup milik kelompokmu.`, 409);
+  let changes = 0;
+  try {
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE participant_groups SET whatsapp_invite_url=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(inviteUrl, group.id),
+      c.env.DB.prepare("INSERT INTO audit_logs (actor_user_id,action,subject_type,subject_id,metadata_json) VALUES (?,'participant_group.invite_updated','participant_group',?,?)").bind(user.id, String(group.id), JSON.stringify({ previous: group.whatsapp_invite_url, current: inviteUrl })),
+    ]);
+    changes = results[0].meta.changes;
+  } catch (error) {
+    if (String(error).includes('UNIQUE')) return c.text('Tautan tersebut sudah digunakan kelompok lain.', 409);
+    throw error;
+  }
+  if (!changes) return c.text('Kelompok tidak ditemukan.', 404);
   return redirectMessage(c, 'Tautan grup WhatsApp disimpan.');
 });
 
