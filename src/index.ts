@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
 import { confirmedPaymentEmailContent, sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
-import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
+import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, confirmedParticipantsCsv, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
 import { qrisWithAmount } from './qris';
 import { rateLimit, verifyTurnstile } from './security';
@@ -436,6 +436,30 @@ app.get('/dashboard/participants', async (c) => {
   if (user.role !== 'admin') return c.text('Tidak diizinkan.', 403);
   const participants = (await c.env.DB.prepare(`SELECT p.*,r.status registration_status,sfp.id social_proof_id,sfp.status social_proof_status,ap.id admission_proof_id,(SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' LIMIT 1) group_name FROM participants p LEFT JOIN registrations r ON r.participant_id=p.id LEFT JOIN social_follow_proofs sfp ON sfp.participant_id=p.id LEFT JOIN admission_proofs ap ON ap.participant_id=p.id ORDER BY p.created_at DESC LIMIT 500`).all<Record<string, unknown>>()).results;
   return c.html(adminParticipantsPage(user, participants, c.req.query('message') ?? ''));
+});
+
+app.get('/dashboard/participants/export.csv', async (c) => {
+  const user = c.get('user')!;
+  if (user.role !== 'admin' || !user.email_verified_at) return c.text('Tidak diizinkan.', 403);
+  const edition = await c.env.DB.prepare("SELECT id,year FROM event_editions WHERE status='published' ORDER BY year DESC,id DESC LIMIT 1").first<{ id: number; year: number }>();
+  if (!edition) return c.text('Current edition belum tersedia.', 404);
+  const rows = (await c.env.DB.prepare(`SELECT pg.name AS group_name,p.full_name,r.public_id,p.email,p.phone,p.gender,COALESCE(sp.full_name,pu.display_name,pu.email) AS pendamping_name
+    FROM registrations r
+    JOIN participants p ON p.id=r.participant_id
+    LEFT JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id
+    LEFT JOIN participant_groups pg ON pg.id=pgm.group_id
+    LEFT JOIN users pu ON pu.id=pg.pendamping_user_id
+    LEFT JOIN staff_profiles sp ON sp.user_id=pu.id
+    WHERE r.edition_id=? AND r.status='confirmed'
+    ORDER BY CASE WHEN pg.name IS NULL THEN 1 ELSE 0 END,pg.name COLLATE NOCASE,p.full_name COLLATE NOCASE,p.id`).bind(edition.id).all<Record<string, unknown>>()).results;
+  const date = new Date().toISOString().slice(0, 10);
+  console.info(`[participants-export] user=${user.id} edition=${edition.id} rows=${rows.length}`);
+  return new Response(confirmedParticipantsCsv(rows), { headers: {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="peserta-confirmed-${edition.year}-${date}.csv"`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+  } });
 });
 
 app.get('/dashboard/event', async (c) => {

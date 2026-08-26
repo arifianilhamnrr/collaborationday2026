@@ -640,12 +640,13 @@ export function adminParticipantsPage(
           `<tr><td><b>${escapeHtml(row.full_name)}</b><br>${escapeHtml(row.email)}</td><td>${row.gender === "male" ? "Laki-laki" : row.gender === "female" ? "Perempuan" : "Belum diisi"}<br><small>${escapeHtml(row.group_name || "Belum dibagi")}</small></td><td>${escapeHtml(row.phone)}<br><span class="status">Tersimpan</span></td><td>Follow: ${row.social_proof_id ? `<span class="status">${escapeHtml(row.social_proof_status || "pending")}</span>` : "—"}<br>Kelulusan: ${row.admission_proof_id ? "✓" : "—"}</td><td><span class="status">${escapeHtml(row.registration_status || "belum daftar")}</span></td><td>${row.admission_proof_id ? `<a href="/dashboard/admission-proofs/${escapeHtml(row.admission_proof_id)}">Bukti kelulusan</a>` : "—"}${row.social_proof_id ? `<br><a href="/dashboard/social-proofs/${escapeHtml(row.social_proof_id)}/collaboration-day-instagram">Bukti follow</a>` : ""}</td></tr>`,
       )
       .join("") || '<tr><td colspan="6">Belum ada peserta.</td></tr>';
-  return dashboardLayout(
+  const page = dashboardLayout(
     "Peserta",
     `${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<div class="page-head"><div><h2>Data peserta.</h2><p>Profil, pembagian kelompok, kelengkapan persyaratan, dan status registrasi.</p></div></div><div class="app-table"><table><thead><tr><th>Peserta</th><th>Gender & kelompok</th><th>WhatsApp</th><th>Syarat</th><th>Registrasi</th><th>Dokumen</th></tr></thead><tbody>${participantRows}</tbody></table></div>`,
     user,
     "participants",
   );
+  return page.replace('</div></div><div class="app-table"><table><thead><tr><th>Peserta</th>', '</div><a class="app-button" href="/dashboard/participants/export.csv">Export peserta confirmed</a></div><div class="app-table"><table><thead><tr><th>Peserta</th>');
 }
 
 export function paymentMethodsPage(

@@ -40,6 +40,28 @@ export function formatRupiah(amount: number): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
 }
 
+function csvCell(value: unknown): string {
+  let text = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+export function confirmedParticipantsCsv(rows: Record<string, unknown>[]): string {
+  const header = ['No', 'Kelompok', 'Nama peserta', 'Nomor peserta', 'Email', 'WhatsApp', 'Jenis kelamin', 'Pendamping', 'Status pembayaran'];
+  let currentGroup = '';
+  let groupNumber = 0;
+  const records = rows.map((row) => {
+    const group = String(row.group_name || 'Belum dibagi');
+    if (group !== currentGroup) {
+      currentGroup = group;
+      groupNumber = 0;
+    }
+    groupNumber += 1;
+    return [groupNumber, group, row.full_name, row.public_id, row.email, row.phone, row.gender === 'male' ? 'Laki-laki' : row.gender === 'female' ? 'Perempuan' : '', row.pendamping_name, 'Terkonfirmasi'];
+  });
+  return `\uFEFF${[header, ...records].map((record) => record.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
+
 export type CashSettlementTiming = 'paid' | 'technical_meeting' | 'event';
 
 export function validCashEntry(amount: number, remaining: number, timing: string): timing is CashSettlementTiming {

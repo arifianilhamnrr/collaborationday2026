@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature } from '../src/domain';
+import { confirmedParticipantsCsv, detectProofContentType, escapeHtml, formatRupiah, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, validProofSignature } from '../src/domain';
 
 describe('domain utilities', () => {
   it('normalizes and validates email', () => {
@@ -14,6 +14,20 @@ describe('domain utilities', () => {
 
   it('formats integer rupiah without decimals', () => {
     expect(formatRupiah(175000)).toMatch(/Rp\s?175\.000/);
+  });
+
+  it('exports confirmed participants grouped for spreadsheets without formula injection', () => {
+    const csv = confirmedParticipantsCsv([
+      { group_name: 'Orion', full_name: '=IMPORTXML("bad")', public_id: 'CD-1', email: 'ayu@example.com', phone: '+6281', gender: 'female', pendamping_name: 'Kak Triono' },
+      { group_name: 'Orion', full_name: 'Budi', public_id: 'CD-2', email: 'budi@example.com', phone: '+6282', gender: 'male', pendamping_name: 'Kak Triono' },
+      { group_name: 'Phoenix', full_name: 'Citra', public_id: 'CD-3', email: 'citra@example.com', phone: '+6283', gender: 'female', pendamping_name: 'Kak Aryunda' },
+    ]);
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('"No","Kelompok","Nama peserta"');
+    expect(csv).toContain('"1","Orion","\'=IMPORTXML(""bad"")"');
+    expect(csv).toContain('"2","Orion","Budi"');
+    expect(csv).toContain('"1","Phoenix","Citra"');
+    expect(csv).toContain('"Terkonfirmasi"');
   });
 
   it('validates cash installments against the remaining balance and settlement timing', () => {

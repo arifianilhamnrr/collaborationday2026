@@ -317,6 +317,13 @@ describe('admin dashboard pages', () => {
     expect(html).not.toContain('event_rundown');
     expect(html).not.toContain('event_faqs');
   });
+
+  it('offers a confirmed participant CSV export from the participant page', () => {
+    const html = adminParticipantsPage(admin, []);
+
+    expect(html).toContain('href="/dashboard/participants/export.csv"');
+    expect(html).toContain('Export peserta confirmed');
+  });
 });
 
 describe('admin payment methods table', () => {
