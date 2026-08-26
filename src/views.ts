@@ -129,7 +129,7 @@ export function dashboardLayout(
         `<a class="${active === key ? "active" : ""}" href="${href}">${label}</a>`,
     )
     .join("");
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.ico"><title>${escapeHtml(title)}</title><style>${dashboardCss}${dashboardEnhancementCss}</style></head><body><div class="app-shell"><aside class="app-sidebar" id="dashboard-sidebar" data-sidebar aria-label="Navigasi dashboard"><button class="sidebar-close" type="button" data-sidebar-close>Tutup menu</button><a class="app-brand" href="/dashboard"><img src="/brand/collaboration-day-2026.png" alt=""><span>Collaboration Day</span></a><p class="app-role">${roleLabel[0]}</p><nav class="app-nav">${nav}</nav><div class="app-account"><b>${escapeHtml(user.display_name || user.email)}</b><br><small>${roleLabel[1]} · ${escapeHtml(user.email)}</small><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}"><button type="submit">Keluar</button></form></div></aside><button class="sidebar-overlay" type="button" data-sidebar-overlay aria-label="Tutup menu navigasi" tabindex="-1"></button><main class="app-main"><header class="app-topbar"><div class="app-topbar-title"><button class="sidebar-toggle" type="button" data-sidebar-toggle aria-controls="dashboard-sidebar" aria-expanded="false" aria-label="Buka menu navigasi"><span></span><span></span><span></span></button><h1>${escapeHtml(title)}</h1></div><a href="/" class="app-button secondary">Lihat website</a></header><div class="app-content">${body}</div></main></div><script src="/dashboard-shell.js" defer></script><script src="/flash.js" defer></script></body></html>`;
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><link rel="icon" href="/favicon.ico"><title>${escapeHtml(title)}</title><style>${dashboardCss}${dashboardEnhancementCss}</style></head><body><div class="app-shell"><aside class="app-sidebar" id="dashboard-sidebar" data-sidebar aria-label="Navigasi dashboard"><button class="sidebar-close" type="button" data-sidebar-close>Tutup menu</button><a class="app-brand" href="/dashboard"><img src="/brand/collaboration-day-2026.png" alt=""><span>Collaboration Day</span></a><p class="app-role">${roleLabel[0]}</p><nav class="app-nav">${nav}</nav><div class="app-account"><b>${escapeHtml(user.display_name || user.email)}</b><br><small>${roleLabel[1]} · ${escapeHtml(user.email)}</small><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}"><button type="submit">Keluar</button></form></div></aside><button class="sidebar-overlay" type="button" data-sidebar-overlay aria-label="Tutup menu navigasi" tabindex="-1"></button><main class="app-main"><header class="app-topbar"><div class="app-topbar-title"><button class="sidebar-toggle" type="button" data-sidebar-toggle aria-controls="dashboard-sidebar" aria-expanded="false" aria-label="Buka menu navigasi"><span></span><span></span><span></span></button><h1>${escapeHtml(title)}</h1></div><a href="/" class="app-button secondary">Lihat website</a></header><div class="app-content">${body}</div></main></div><script src="/dashboard-shell.js" defer></script><script src="/flash.js" defer></script></body></html>`;
 }
 
 const css = `
@@ -228,11 +228,12 @@ export function layout(
   title: string,
   body: string,
   user?: SessionUser | null,
+  head = '<meta name="robots" content="noindex,follow">',
 ): string {
   const nav = user
     ? `<a href="/#arsip">Arsip</a><a href="/dashboard">Dashboard</a><form method="post" action="/logout" style="display:inline"><input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}"><button class="secondary" type="submit">Keluar</button></form>`
     : `<a href="/#tentang">Tentang</a><a href="/#arsip">Arsip</a><a class="button" href="/login">Masuk</a>`;
-  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Collaboration Day Informatika 2026: Connecting Minds in the Digital Universe."><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png"><title>${escapeHtml(title)}</title><style>${css}${cssV2}${cssV3}${cssV4}${motionCss}</style></head><body><nav><a class="brand" href="/"><img src="/brand/collaboration-day-2026.png" alt=""><span>COLLABORATION DAY</span></a><div class="navlinks">${nav}</div></nav>${body}<footer><div class="inline"><img src="/brand/hmps-informatika.png" alt="HMPS Informatika" width="42" height="42"><img src="/brand/program-studi-informatika.png" alt="Program Studi Informatika" width="42" height="42"><b>COLLABORATION DAY 2026</b></div><span>Bangun Relasi, Satu Ambisi. Informatika, Salam Kolaborasi!</span></footer><script src="/flash.js" defer></script></body></html>`;
+  return `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Collaboration Day Informatika 2026: Connecting Minds in the Digital Universe.">${head}<link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png"><title>${escapeHtml(title)}</title><style>${css}${cssV2}${cssV3}${cssV4}${motionCss}</style></head><body><nav><a class="brand" href="/"><img src="/brand/collaboration-day-2026.png" alt=""><span>COLLABORATION DAY</span></a><div class="navlinks">${nav}</div></nav>${body}<footer><div class="inline"><img src="/brand/hmps-informatika.png" alt="HMPS Informatika" width="42" height="42"><img src="/brand/program-studi-informatika.png" alt="Program Studi Informatika" width="42" height="42"><b>COLLABORATION DAY 2026</b></div><span>Bangun Relasi, Satu Ambisi. Informatika, Salam Kolaborasi!</span></footer><script src="/flash.js" defer></script></body></html>`;
 }
 
 export function temporaryFailurePage(returnTo: '/dashboard' | '/' = '/') {
@@ -270,6 +271,32 @@ export function landing(
   const archiveRange = archiveYears.length
     ? `${Math.min(...archiveYears)}—${Math.max(...archiveYears)}`
     : "";
+  const origin = "https://collaborationday2026.web.id";
+  const description = "Collaboration Day Informatika UIN SAIZU 2026: dua hari aktivitas edukatif dan kolaboratif untuk mahasiswa baru Informatika.";
+  const image = firstSlide.startsWith("http") ? firstSlide : `${origin}${firstSlide}`;
+  const eventSchema = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Event",
+    name: current.title,
+    description: current.description,
+    startDate: current.starts_at,
+    endDate: current.ends_at,
+    eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+    eventStatus: "https://schema.org/EventScheduled",
+    location: {
+      "@type": "Place",
+      name: current.venue,
+      address: current.venue,
+    },
+    image: [image],
+    url: `${origin}/`,
+    organizer: {
+      "@type": "Organization",
+      name: "HMPS Informatika UIN SAIZU",
+      url: `${origin}/`,
+    },
+  }).replace(/</g, "\\u003c");
+  const seoHead = `<meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="${origin}/"><meta property="og:type" content="website"><meta property="og:locale" content="id_ID"><meta property="og:site_name" content="Collaboration Day 2026"><meta property="og:title" content="${escapeHtml(current.title)}"><meta property="og:description" content="${description}"><meta property="og:url" content="${origin}/"><meta property="og:image" content="${escapeHtml(image)}"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">${eventSchema}</script>`;
   return optimizeLandingImages(layout(
     current.title,
     `<main><section class="hero" data-slides="${slideData}"><div class="hero-copy"><div><span class="kicker">Informatika UIN SAIZU / 5–6 September 2026</span><h1>CODE<span>VERSE</span></h1></div><div class="facts"><div><small>Tanggal</small>${start}–${end}</div><div><small>Tempat</small>${escapeHtml(current.venue)}</div></div></div><div class="hero-art"><img class="hero-slide current" src="${escapeHtml(firstSlide)}" alt="Dokumentasi Collaboration Day" fetchpriority="high" decoding="async"><img class="hero-slide next" src="${escapeHtml(firstSlide)}" alt="" decoding="async"><div><h2>${escapeHtml(current.theme.replace(/^CODEVERSE:\s*/i, ""))}</h2><p>Bangun Relasi, Satu Ambisi.<br>Informatika, Salam Kolaborasi!</p></div></div></section>
@@ -304,6 +331,8 @@ export function landing(
           .join("")}</div></section>`
       : ""
   }</main><script src="/landing.js?v=20260817-android-reveal" defer></script>`,
+  null,
+  seoHead,
   ));
 }
 
@@ -386,7 +415,7 @@ export function participantDashboard(
       cancelled: "Dibatalkan",
     };
     const paymentChoices = methods.map((method) => `<option value="${method.id}">${escapeHtml(method.label)}</option>`).join("");
-    const paymentOptions = methods.map((method) => participantPaymentOption(method, user)).join("");
+    const paymentOptions = methods.map((method) => participantPaymentOption(method, user, registration, profile.full_name)).join("");
     const paymentFlow = methods.length ? `<div class="payment-selector"><label>Pilih metode pembayaran<select id="participant-payment-method" required><option value="">Pilih salah satu metode</option>${paymentChoices}</select></label></div><div class="participant-payment-options" aria-live="polite"><div class="payment-empty" id="participant-payment-empty">Pilih metode pembayaran untuk melihat detail dan melanjutkan.</div>${paymentOptions}</div><script src="/participant-payment.js" defer></script>` : '<div class="notice">Belum ada metode pembayaran yang aktif.</div>';
     const eventOverview = `<div class="payment-overview"><div class="payment-overview-head"><small>Registrasi Collaboration Day</small><h2>${escapeHtml(registration.title)}</h2><p>${escapeHtml(registration.theme)}</p></div><div class="payment-overview-facts"><div><small>Nomor peserta</small><b class="mono">${escapeHtml(registration.public_id)}</b></div><div><small>Total tagihan</small><b>${formatRupiah(Number(registration.amount_due))}</b></div></div></div>`;
     content = `<span class="status">${escapeHtml(labels[String(registration.status)] ?? registration.status)}</span><h1>Halo, ${escapeHtml(profile.full_name)}.</h1>${eventOverview}${confirmed ? `<div class="notice"><b>Participant pass aktif.</b><br>Reference QR: <span class="mono">${escapeHtml(registration.ticket_reference)}</span></div>${registration.receipt_id ? `<a class="button" href="/dashboard/receipts/${escapeHtml(registration.receipt_id)}">Unduh kuitansi elektronik</a>` : "<p>Kuitansi elektronik sedang diproses.</p>"}` : `${registration.rejection_reason ? `<div class="notice error"><b>Pembayaran ditolak:</b> ${escapeHtml(registration.rejection_reason)}</div>` : ""}${registration.status === "payment_review" ? '<div class="notice"><b>Pembayaran sedang diverifikasi.</b><br>Kamu tidak perlu mengirim bukti kembali selama proses review.</div>' : paymentFlow}`}`;
@@ -410,13 +439,17 @@ export function participantDashboard(
   );
 }
 
-function participantPaymentOption(method: PaymentMethod, user: SessionUser): string {
+function participantPaymentOption(method: PaymentMethod, user: SessionUser, registration: Record<string, unknown>, participantName: string): string {
   const csrf = `<input type="hidden" name="csrf_token" value="${escapeHtml(user.csrf_token)}">`;
   const typeLabel = method.type === "static_qris" ? "QRIS" : method.type === "cash" ? "Tunai" : "Transfer bank";
+  const pendampingPhone = String(registration.pendamping_phone || "").replace(/\D/g, "");
+  const pendampingName = String(registration.pendamping_name || "pendamping kelompok");
+  const cashMessage = `Halo ${pendampingName}, saya ${participantName} (${String(registration.public_id || "peserta")}) dari Kelompok ${String(registration.group_name || "-")}. Saya ingin melakukan pembayaran tunai Collaboration Day.`;
+  const cashContact = pendampingPhone ? `<p><a class="button secondary" href="https://wa.me/${escapeHtml(pendampingPhone)}?text=${encodeURIComponent(cashMessage)}" target="_blank" rel="noreferrer">Hubungi pendamping via WhatsApp</a></p>` : '<div class="notice">Nomor WhatsApp pendamping belum tersedia. Hubungi panitia untuk bantuan pembayaran tunai.</div>';
   const details = method.type === "static_qris"
     ? `<p>Scan kode berikut dari aplikasi pembayaran. Nominal sudah terisi sesuai tagihan.</p><div class="payment-qris"><img src="/dashboard/payment-methods/${method.id}/qris.svg" alt="QRIS dengan nominal pembayaran otomatis"><small>${escapeHtml(method.instructions || "Scan QRIS untuk melanjutkan pembayaran.")}</small></div>`
     : method.type === "cash"
-      ? `<p>Bayar langsung kepada pendamping kelompok. Pembayaran dapat dicatat sebagai cicilan sampai lunas.</p><div class="notice">${escapeHtml(method.instructions || "Serahkan pembayaran tunai kepada pendamping kelompok.")}</div>`
+      ? `<p>Bayar langsung kepada <b>${escapeHtml(pendampingName)}</b>. Pembayaran dapat dicatat sebagai cicilan sampai lunas.</p><div class="notice">${escapeHtml(method.instructions || "Serahkan pembayaran tunai kepada pendamping kelompok.")}</div>${cashContact}`
       : `<p>Transfer sesuai nominal tagihan ke rekening berikut.</p><div class="bank-details"><div><small>Bank</small><b>${escapeHtml(method.bank_name)}</b></div><div><small>Nomor rekening</small><b class="mono">${escapeHtml(method.account_number)}</b></div><div><small>Atas nama</small><b>${escapeHtml(method.account_name)}</b></div></div><small>${escapeHtml(method.instructions || "Unggah bukti setelah transfer berhasil.")}</small>`;
   const action = method.type === "cash"
     ? `<form class="payment-action" method="post" action="/dashboard/payment-cash">${csrf}<input type="hidden" name="payment_method_id" value="${method.id}"><button type="submit">Ajukan pembayaran tunai</button></form>`

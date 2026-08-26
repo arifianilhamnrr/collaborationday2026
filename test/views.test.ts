@@ -195,6 +195,9 @@ describe('participant dashboard', () => {
       venue: 'Kampus',
       public_id: 'CD2026-TEST',
       amount_due: 120000,
+      group_name: 'Orion',
+      pendamping_name: 'Kak Triono',
+      pendamping_phone: '+6281234567890',
     }, [...methods, {
       id: 2,
       type: 'cash',
@@ -221,6 +224,10 @@ describe('participant dashboard', () => {
     expect(html).toContain('<option value="2">Pembayaran Tunai</option>');
     expect(html).toContain('/dashboard/payment-methods/3/qris.svg');
     expect(html).toContain('Nominal sudah terisi sesuai tagihan');
+    expect(html).toContain('https://wa.me/6281234567890?text=');
+    expect(html).toContain('Hubungi pendamping via WhatsApp');
+    expect(html).toContain(`text=${encodeURIComponent('Halo Kak Triono, saya Ayu Pratama (CD2026-TEST) dari Kelompok Orion. Saya ingin melakukan pembayaran tunai Collaboration Day.')}`);
+    expect(html.match(/https:\/\/wa\.me\//g)).toHaveLength(1);
   });
 
   it('hides the upload form while a proof is under review', () => {
@@ -495,6 +502,18 @@ describe('Whatsar pairing page', () => {
 });
 
 describe('landing page media', () => {
+  it('publishes canonical metadata and structured event data', () => {
+    const html = landing(edition, [], []);
+
+    expect(html).toContain('<meta name="robots" content="index,follow,max-image-preview:large">');
+    expect(html).toContain('<link rel="canonical" href="https://collaborationday2026.web.id/">');
+    expect(html).toContain('<meta property="og:site_name" content="Collaboration Day 2026">');
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+    expect(html).toContain('<script type="application/ld+json">');
+    expect(html).toContain('"@type":"Event"');
+    expect(html).toContain('"startDate":"2026-09-05"');
+  });
+
   it('lazy-loads the archive and renders Algo without layout shift', () => {
     const html = landing(edition, [{ ...edition, year: 2025 }, { ...edition, year: 2023 }], [{
       image_url: '/media/archive/2025/example.webp',

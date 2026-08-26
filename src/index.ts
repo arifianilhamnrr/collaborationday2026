@@ -13,6 +13,8 @@ import { getWhatsarConfig, loadWhatsarOverview, WhatsarRequestError, whatsarRequ
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+const publicOrigin = 'https://collaborationday2026.web.id';
+
 async function autoAssignParticipantGroup(db: D1Database, participantId: number): Promise<boolean> {
   const edition = await db.prepare("SELECT id FROM event_editions WHERE status='published' ORDER BY year DESC,id DESC LIMIT 1").first<{ id: number }>();
   if (!edition) return false;
@@ -33,6 +35,11 @@ async function autoAssignParticipantGroup(db: D1Database, participantId: number)
 }
 
 app.use('*', async (c, next) => {
+  if (new URL(c.req.url).protocol === 'http:') {
+    const target = new URL(c.req.url);
+    target.protocol = 'https:';
+    return c.redirect(target.toString(), 308);
+  }
   c.set('user', await loadSession(c));
   await next();
   const proofPreview = /^\/dashboard\/payments\/[^/]+\/proof$/.test(c.req.path) && c.req.query('preview') === '1';
@@ -43,6 +50,16 @@ app.use('*', async (c, next) => {
   c.header('Content-Security-Policy', proofPreview ? "default-src 'none'; frame-ancestors 'self';" : "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; frame-src 'self' https://challenges.cloudflare.com https://www.google.com; connect-src 'self' https://challenges.cloudflare.com https://cloudflareinsights.com; form-action 'self'; frame-ancestors 'none'; base-uri 'self'");
   if (c.get('user')) c.header('Cache-Control', 'private, no-store');
 });
+
+app.get('/robots.txt', (c) => c.text(`User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /verify-email\nDisallow: /reset-password\nSitemap: ${publicOrigin}/sitemap.xml\n`, 200, {
+  'Content-Type': 'text/plain; charset=UTF-8',
+  'Cache-Control': 'public, max-age=3600',
+}));
+
+app.get('/sitemap.xml', (c) => c.body(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>${publicOrigin}/</loc>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n</urlset>`, 200, {
+  'Content-Type': 'application/xml; charset=UTF-8',
+  'Cache-Control': 'public, max-age=3600',
+}));
 
 app.use('*', async (c, next) => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && !originAllowed(c)) return c.text('Origin tidak valid.', 403);
@@ -211,7 +228,9 @@ app.get('/dashboard', async (c) => {
     (SELECT COALESCE(SUM(cpe.amount_received),0) FROM payment_submissions cps JOIN payment_methods cpm ON cpm.id=cps.payment_method_id LEFT JOIN cash_payment_entries cpe ON cpe.payment_submission_id=cps.id WHERE cps.registration_id=r.id AND cpm.type='cash') AS cash_paid,
     (SELECT cpe.settlement_timing FROM payment_submissions cps JOIN payment_methods cpm ON cpm.id=cps.payment_method_id JOIN cash_payment_entries cpe ON cpe.payment_submission_id=cps.id WHERE cps.registration_id=r.id AND cpm.type='cash' ORDER BY cpe.id DESC LIMIT 1) AS cash_timing,
     (SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS group_name,
-    (SELECT pg.whatsapp_invite_url FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS group_whatsapp_url
+    (SELECT pg.whatsapp_invite_url FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS group_whatsapp_url,
+    (SELECT sp.phone_e164 FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN staff_profiles sp ON sp.user_id=pg.pendamping_user_id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS pendamping_phone,
+    (SELECT COALESCE(sp.full_name,u.display_name,u.email) FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id LEFT JOIN staff_profiles sp ON sp.user_id=u.id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS pendamping_name
     FROM registrations r JOIN event_editions e ON e.id=r.edition_id WHERE r.participant_id=? ORDER BY r.id DESC LIMIT 1`).bind(profile.id).first<Record<string, unknown>>() : null;
   const methods = registration ? (await c.env.DB.prepare('SELECT * FROM payment_methods WHERE edition_id=? AND is_active=1 ORDER BY sort_order').bind(registration.edition_id).all<PaymentMethod>()).results : [];
   return c.html(participantDashboard(user, profile, edition, registration, methods, socialProof?.status ?? '', Boolean(admissionProof), message));
