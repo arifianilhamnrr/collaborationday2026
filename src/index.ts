@@ -119,7 +119,7 @@ app.post('/signup', async (c) => {
   return c.redirect('/dashboard', 303);
 });
 
-app.get('/login', (c) => c.get('user') ? c.redirect('/dashboard') : c.html(authPage('login', '', '', c.env.TURNSTILE_SITE_KEY)));
+app.get('/login', (c) => c.get('user') ? c.redirect('/dashboard') : c.html(authPage('login', c.req.query('message') ?? '', '', c.env.TURNSTILE_SITE_KEY, c.req.query('type') === 'error' ? 'error' : 'success')));
 app.post('/login', async (c) => {
   const body = await c.req.parseBody();
   const email = normalizeEmail(String(body.email ?? ''));
@@ -194,7 +194,7 @@ app.post('/reset-password', async (c) => {
     c.env.DB.prepare('UPDATE password_reset_challenges SET consumed_at=COALESCE(consumed_at,CURRENT_TIMESTAMP) WHERE user_id=?').bind(challenge.user_id),
     c.env.DB.prepare('UPDATE sessions SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=? AND revoked_at IS NULL').bind(challenge.user_id),
   ]);
-  return c.html(authPage('login', 'Password berhasil diperbarui. Silakan masuk.', '', c.env.TURNSTILE_SITE_KEY, 'success'));
+  return c.redirect(`/login?message=${encodeURIComponent('Password berhasil diperbarui. Silakan masuk.')}&type=success`, 303);
 });
 
 app.use('/dashboard/*', async (c, next) => {

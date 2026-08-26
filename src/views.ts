@@ -369,12 +369,13 @@ export function authPage(
       token ? `<input type="hidden" name="token" value="${escapeHtml(token)}"><label>Password baru<input name="password" type="password" minlength="10" maxlength="128" required autocomplete="new-password"></label><button type="submit">Simpan password</button>` : '<a class="button" href="/forgot-password">Minta tautan reset baru</a>',
     ],
   }[kind];
+  const action = kind === "signup" ? "/signup" : kind === "login" ? "/login" : kind === "forgot" ? "/forgot-password" : "/reset-password";
   const script = turnstileSiteKey
     ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'
     : "";
   return layout(
     content[0],
-    `<main class="panel"><span class="eyebrow">Akun Collaboration Day</span><h1>${content[0]}</h1><p>${content[1]}</p>${message ? `<div class="notice${messageType === "error" ? " error" : ""}">${escapeHtml(message)}</div>` : ""}<form class="stack" method="post">${content[2]}</form></main>${script}`,
+    `<main class="panel"><span class="eyebrow">Akun Collaboration Day</span><h1>${content[0]}</h1><p>${content[1]}</p>${message ? `<div class="notice${messageType === "error" ? " error" : ""}">${escapeHtml(message)}</div>` : ""}<form class="stack" method="post" action="${action}">${content[2]}</form></main>${script}`,
   );
 }
 

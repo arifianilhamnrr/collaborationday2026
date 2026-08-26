@@ -61,7 +61,14 @@ describe('password reset pages', () => {
 
     expect(html).toContain('class="cf-turnstile"');
     expect(html).toContain('data-sitekey="turnstile-key"');
+    expect(html).toContain('<form class="stack" method="post" action="/login">');
     expect(html).toContain('Password berhasil diperbarui. Silakan masuk.');
+  });
+
+  it('pins every auth form to its own endpoint', () => {
+    expect(authPage('forgot')).toContain('action="/forgot-password"');
+    expect(authPage('reset', '', 'token')).toContain('action="/reset-password"');
+    expect(authPage('signup')).toContain('action="/signup"');
   });
 });
 
