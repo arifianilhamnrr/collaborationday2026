@@ -225,6 +225,7 @@ app.get('/dashboard', async (c) => {
     r.participant_ref AS ticket_reference,
     (SELECT id FROM electronic_receipts WHERE registration_id=r.id) AS receipt_id,
     (SELECT rejection_reason FROM payment_submissions WHERE registration_id=r.id AND status='rejected' ORDER BY reviewed_at DESC LIMIT 1) AS rejection_reason,
+    (SELECT pm.type FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id WHERE ps.registration_id=r.id AND ps.status='pending' ORDER BY ps.id DESC LIMIT 1) AS pending_payment_type,
     (SELECT COALESCE(SUM(cpe.amount_received),0) FROM payment_submissions cps JOIN payment_methods cpm ON cpm.id=cps.payment_method_id LEFT JOIN cash_payment_entries cpe ON cpe.payment_submission_id=cps.id WHERE cps.registration_id=r.id AND cpm.type='cash') AS cash_paid,
     (SELECT cpe.settlement_timing FROM payment_submissions cps JOIN payment_methods cpm ON cpm.id=cps.payment_method_id JOIN cash_payment_entries cpe ON cpe.payment_submission_id=cps.id WHERE cps.registration_id=r.id AND cpm.type='cash' ORDER BY cpe.id DESC LIMIT 1) AS cash_timing,
     (SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id WHERE pgm.participant_id=r.participant_id AND pgm.edition_id=r.edition_id LIMIT 1) AS group_name,

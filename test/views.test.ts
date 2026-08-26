@@ -244,6 +244,26 @@ describe('participant dashboard', () => {
     expect(html).toContain('Sedang diverifikasi');
   });
 
+  it('keeps the pendamping WhatsApp contact visible while cash payment is pending', () => {
+    const html = participantDashboard(user, profile, null, {
+      status: 'payment_review',
+      pending_payment_type: 'cash',
+      title: 'Collaboration Day 2026',
+      theme: 'CODEVERSE',
+      venue: 'Kampus',
+      public_id: 'CD2026-TEST',
+      amount_due: 120000,
+      group_name: 'Orion',
+      pendamping_name: 'Kak Triono',
+      pendamping_phone: '+6281234567890',
+    }, methods, true, true);
+
+    expect(html).toContain('Pembayaran sedang diproses.');
+    expect(html).toContain('Hubungi pendamping via WhatsApp');
+    expect(html).toContain('https://wa.me/6281234567890?text=');
+    expect(html).not.toContain('action="/dashboard/payment-proof"');
+  });
+
   it('continues onboarding while social proofs are pending', () => {
     const html = participantDashboard(user, { ...profile, whatsapp_verified_at: '2026-08-15 10:20:00' }, edition, null, methods, 'pending', false);
 
