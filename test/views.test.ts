@@ -182,9 +182,12 @@ describe('participant dashboard', () => {
     expect(html).toContain('accept="image/jpeg,image/png,application/pdf"');
     expect(html).toContain('name="payment_method_id"');
     expect(html).toContain('name="csrf_token" value="csrf-token"');
+    expect(html).toContain('data-stable-upload');
+    expect(html).toContain('data-stable-file');
+    expect(html).toContain('data-upload-status aria-live="polite"');
     expect(html).toContain('id="participant-payment-method"');
     expect(html).toContain('data-payment-option="1" hidden');
-    expect(html).toContain('<script src="/participant-payment.js" defer></script>');
+    expect(html).toContain('<script src="/participant-payment.js?v=20260826-stable-upload" defer></script>');
   });
 
   it('separates cash requests from proof-based payment methods', () => {
