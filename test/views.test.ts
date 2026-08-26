@@ -434,6 +434,22 @@ describe('staff workspaces', () => {
     expect(html).toContain('action="/dashboard/team/memberships"');
   });
 
+  it('adds independent search and pagination controls to every team table', () => {
+    const html = adminTeamPage(admin, edition, [{ user_id: 2, email: 'pendamping@example.com', role: 'pendamping', full_name: 'Kak Dita' }], [{ id: 4, name: 'Orion', pendamping_name: 'Kak Dita', member_count: 12 }], [{ id: 1, full_name: 'Ayu', email: 'ayu@example.com', group_name: 'Orion' }]);
+
+    expect(html).toContain('data-client-table="staff"');
+    expect(html).toContain('data-client-table="groups"');
+    expect(html).toContain('data-client-table="participants"');
+    expect(html.match(/data-table-search/g)).toHaveLength(3);
+    expect(html.match(/data-table-page-size/g)).toHaveLength(3);
+    expect(html.match(/data-table-prev/g)).toHaveLength(3);
+    expect(html.match(/data-table-next/g)).toHaveLength(3);
+    expect(html).toContain('Tidak ada peserta yang cocok.');
+    expect(html).toContain('<script src="/client-tables.js?v=20260826" defer></script>');
+    expect(html).toContain('Status nomor');
+    expect(html).not.toContain('Status OTP');
+  });
+
   it('shows seeded groups before pendamping accounts are available', () => {
     const html = adminTeamPage(admin, edition, [], [{ id: 4, name: 'Horison', pendamping_user_id: null, member_count: 0 }], []);
 
