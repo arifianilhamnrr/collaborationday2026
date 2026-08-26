@@ -18,6 +18,13 @@ export function confirmedPaymentEmailContent(appOrigin: string, recipient: { par
   return `<h1>Pembayaran telah terverifikasi</h1><p>Halo ${escapeHtml(recipient.participantName)}, pembayaran kamu telah diperiksa dan dinyatakan valid. Kuitansi elektronik resmi terlampir pada email ini.</p><p>Nomor kuitansi: <b>${escapeHtml(recipient.receiptNumber)}</b></p>${groupAccess}<p><a href="${escapeHtml(appOrigin)}/dashboard">Buka dashboard peserta</a></p>`;
 }
 
+export function cashPaymentRequestEmailContent(appOrigin: string, request: { participantName: string; participantRef: string; participantPhone: string; groupName: string }): string {
+  const phone = request.participantPhone.replace(/\D/g, '');
+  const groupName = request.groupName.replace(/^kelompok\s+/i, '');
+  const message = encodeURIComponent(`Halo ${request.participantName}, saya pendamping Kelompok ${groupName}. Saya menghubungi terkait pengajuan pembayaran tunai Collaboration Day (${request.participantRef}).`);
+  return `<h1>Pengajuan pembayaran tunai baru</h1><p><b>${escapeHtml(request.participantName)}</b> dari Kelompok <b>${escapeHtml(groupName)}</b> mengajukan pembayaran tunai.</p><p>Nomor peserta: <b>${escapeHtml(request.participantRef)}</b></p>${phone ? `<p><a href="https://wa.me/${phone}?text=${message}">Hubungi peserta via WhatsApp</a></p>` : ''}<p><a href="${escapeHtml(appOrigin)}/dashboard">Buka dashboard pendamping</a></p>`;
+}
+
 export async function sendTransactionalEmail(env: Bindings, recipient: string, subject: string, html: string, attachment?: { name: string; contentBase64: string }): Promise<string | null> {
   const settingsRows = (await env.DB.prepare("SELECT key, value FROM app_settings WHERE key LIKE 'brevo_%'").all<{ key: string; value: string }>()).results;
   const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));

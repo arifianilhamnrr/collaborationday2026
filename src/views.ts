@@ -534,6 +534,11 @@ export function pendampingDashboardPage(
       .map((member) => {
         const proofStatus = String(member.social_proof_status || "belum mengirim");
         const proofId = Number(member.social_proof_id || 0);
+        const participantPhone = String(member.phone || "").replace(/\D/g, "");
+        const groupName = String(group.name || "");
+        const groupLabel = /^kelompok\s/i.test(groupName) ? groupName : `Kelompok ${groupName}`;
+        const contactMessage = `Halo ${String(member.full_name || "")}, saya ${staff.full_name}, pendamping ${groupLabel}. Saya menghubungi terkait kegiatan Collaboration Day.`;
+        const contact = participantPhone ? `<a class="app-button secondary" href="https://wa.me/${escapeHtml(participantPhone)}?text=${encodeURIComponent(contactMessage)}" target="_blank" rel="noreferrer">WhatsApp peserta</a>` : '<span class="status">Nomor belum tersedia</span>';
         const proofLinks = proofId
           ? `<div class="inline"><a href="/dashboard/social-proofs/${proofId}/collaboration-day-instagram" target="_blank">Collab Day</a><a href="/dashboard/social-proofs/${proofId}/hmps-instagram" target="_blank">Instagram HMPS</a><a href="/dashboard/social-proofs/${proofId}/hmps-tiktok" target="_blank">TikTok HMPS</a></div>`
           : "—";
@@ -541,9 +546,9 @@ export function pendampingDashboardPage(
           proofId && proofStatus === "pending"
             ? `<form class="stack" method="post" action="/dashboard/social-proofs/${proofId}/review">${csrf}<select name="decision"><option value="verified">Setujui</option><option value="rejected">Tolak</option></select><input name="rejection_reason" maxlength="500" placeholder="Alasan jika ditolak"><button type="submit">Simpan review</button></form>`
             : "—";
-        return `<tr><td><b>${escapeHtml(member.full_name)}</b><br><small>${escapeHtml(member.phone)}</small></td><td><span class="status">${escapeHtml(proofStatus)}</span>${member.rejection_reason ? `<br><small>${escapeHtml(member.rejection_reason)}</small>` : ""}</td><td>${proofLinks}</td><td>${review}</td></tr>`;
+        return `<tr><td><b>${escapeHtml(member.full_name)}</b><br><small>${escapeHtml(member.phone)}</small></td><td><span class="status">${escapeHtml(proofStatus)}</span>${member.rejection_reason ? `<br><small>${escapeHtml(member.rejection_reason)}</small>` : ""}</td><td>${proofLinks}</td><td>${review}</td><td>${contact}</td></tr>`;
       })
-      .join("") || '<tr><td colspan="4">Belum ada peserta dalam kelompok.</td></tr>';
+      .join("") || '<tr><td colspan="5">Belum ada peserta dalam kelompok.</td></tr>';
   const cashRows =
     cashPayments
       .map((payment) => {
@@ -555,7 +560,7 @@ export function pendampingDashboardPage(
       .join("") || '<tr><td colspan="3">Belum ada pengajuan pembayaran tunai.</td></tr>';
   return dashboardLayout(
     "Kelompok Saya",
-    `${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<div class="page-head"><div><h2>${escapeHtml(group.name)}</h2><p>${members.length} peserta dalam pendampingan ${escapeHtml(staff.full_name)}.</p></div></div><div class="app-grid"><section class="app-card"><h3>Grup WhatsApp kelompok</h3><form class="app-form" method="post" action="/dashboard/pendamping/group">${csrf}<label class="full">Tautan undangan<input name="whatsapp_invite_url" type="url" required placeholder="https://chat.whatsapp.com/..." value="${escapeHtml(group.whatsapp_invite_url || "")}"></label><button type="submit">Simpan tautan grup</button></form></section><section class="app-card"><h3>Verifikasi bukti follow</h3><div class="app-table"><table><thead><tr><th>Peserta</th><th>Status</th><th>Berkas</th><th>Tindakan</th></tr></thead><tbody>${proofRows}</tbody></table></div></section><section class="app-card"><h3>Pembayaran tunai & cicilan</h3><p>Catat hanya uang yang benar-benar sudah diterima. Registrasi dikonfirmasi otomatis setelah total tepat lunas.</p><div class="app-table"><table><thead><tr><th>Peserta</th><th>Saldo</th><th>Catat penerimaan</th></tr></thead><tbody>${cashRows}</tbody></table></div></section></div>`,
+    `${message ? `<div class="notice">${escapeHtml(message)}</div>` : ""}<div class="page-head"><div><h2>${escapeHtml(group.name)}</h2><p>${members.length} peserta dalam pendampingan ${escapeHtml(staff.full_name)}.</p></div></div><div class="app-grid"><section class="app-card"><h3>Grup WhatsApp kelompok</h3><form class="app-form" method="post" action="/dashboard/pendamping/group">${csrf}<label class="full">Tautan undangan<input name="whatsapp_invite_url" type="url" required placeholder="https://chat.whatsapp.com/..." value="${escapeHtml(group.whatsapp_invite_url || "")}"></label><button type="submit">Simpan tautan grup</button></form></section><section class="app-card"><h3>Verifikasi bukti follow</h3><div class="app-table"><table><thead><tr><th>Peserta</th><th>Status</th><th>Berkas</th><th>Tindakan</th><th>Kontak</th></tr></thead><tbody>${proofRows}</tbody></table></div></section><section class="app-card"><h3>Pembayaran tunai & cicilan</h3><p>Catat hanya uang yang benar-benar sudah diterima. Registrasi dikonfirmasi otomatis setelah total tepat lunas.</p><div class="app-table"><table><thead><tr><th>Peserta</th><th>Saldo</th><th>Catat penerimaan</th></tr></thead><tbody>${cashRows}</tbody></table></div></section></div>`,
     user,
     "overview",
   );

@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import QRCode from 'qrcode';
 import { createSession, csrfValid, destroySession, hashPassword, loadSession, originAllowed, validPassword, verifyPassword } from './auth';
-import { confirmedPaymentEmailContent, sendTransactionalEmail } from './brevo';
+import { cashPaymentRequestEmailContent, confirmedPaymentEmailContent, sendTransactionalEmail } from './brevo';
 import { encryptSetting } from './config-crypto';
 import { ALLOWED_GALLERY_TYPES, MAX_GALLERY_BYTES, MAX_PROOF_BYTES, bytesToBase64, confirmedParticipantsCsv, detectProofContentType, escapeHtml, hmacHex, normalizeEmail, normalizeIndonesianPhone, normalizeWhatsappInviteUrl, randomToken, safeEqual, sha256, validCashEntry, validEmail, validGallerySignature, type ProofContentType } from './domain';
 import { generateReceiptPdf } from './receipt';
@@ -805,8 +805,8 @@ app.post('/dashboard/payment-cash', async (c) => {
     throw error;
   }
   try {
-    const cashNotice = await c.env.DB.prepare(`SELECT p.full_name,r.public_id,u.email AS pendamping_email,pg.name AS group_name FROM registrations r JOIN participants p ON p.id=r.participant_id JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id WHERE r.id=?`).bind(registration.id).first<{ full_name: string; public_id: string; pendamping_email: string; group_name: string }>();
-    if (cashNotice) queueNotificationEmail(c, [cashNotice.pendamping_email], `Pengajuan pembayaran tunai — ${cashNotice.public_id}`, `<h1>Pengajuan pembayaran tunai baru</h1><p><b>${escapeHtml(cashNotice.full_name)}</b> dari kelompok <b>${escapeHtml(cashNotice.group_name)}</b> mengajukan pembayaran tunai.</p><p><a href="${escapeHtml(c.env.APP_ORIGIN)}/dashboard">Buka dashboard pendamping</a></p>`);
+    const cashNotice = await c.env.DB.prepare(`SELECT p.full_name,p.phone,r.public_id,u.email AS pendamping_email,pg.name AS group_name FROM registrations r JOIN participants p ON p.id=r.participant_id JOIN participant_group_memberships pgm ON pgm.participant_id=p.id AND pgm.edition_id=r.edition_id JOIN participant_groups pg ON pg.id=pgm.group_id JOIN users u ON u.id=pg.pendamping_user_id WHERE r.id=?`).bind(registration.id).first<{ full_name: string; phone: string; public_id: string; pendamping_email: string; group_name: string }>();
+    if (cashNotice) queueNotificationEmail(c, [cashNotice.pendamping_email], `Pengajuan pembayaran tunai — ${cashNotice.public_id}`, cashPaymentRequestEmailContent(c.env.APP_ORIGIN, { participantName: cashNotice.full_name, participantRef: cashNotice.public_id, participantPhone: cashNotice.phone, groupName: cashNotice.group_name }));
   } catch (error) {
     console.error(`[email-notification:cash-upload] registration=${registration.id}`, error);
   }

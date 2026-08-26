@@ -485,6 +485,23 @@ describe('staff workspaces', () => {
     expect(html).toContain('action="/dashboard/cash-payments/9/entries"');
     expect(html).toContain('Saat technical meeting');
     expect(html).toContain('max="80000"');
+    expect(html).toContain('<th>Kontak</th>');
+    expect(html).toContain('https://wa.me/6281?text=');
+    expect(html).toContain('WhatsApp peserta');
+    expect(html).toContain(`text=${encodeURIComponent('Halo Ayu, saya Kak Dita, pendamping Kelompok Algo. Saya menghubungi terkait kegiatan Collaboration Day.')}`);
+  });
+
+  it('shows a safe fallback when a participant has no WhatsApp number', () => {
+    const html = pendampingDashboardPage(
+      pendamping,
+      { user_id: 2, role: 'pendamping', full_name: 'Kak Dita', phone_e164: '+6281234567890', whatsapp_verified_at: null },
+      { id: 4, name: 'Orion', whatsapp_invite_url: null },
+      [{ full_name: 'Ayu', phone: null, social_proof_id: null }],
+      [],
+    );
+
+    expect(html).toContain('Nomor belum tersedia');
+    expect(html).not.toContain('https://wa.me/');
   });
 
   it('uses the bendahara workspace for non-cash review', () => {
