@@ -452,7 +452,13 @@ app.post('/dashboard/pendamping/group', async (c) => {
 app.get('/dashboard/participants', async (c) => {
   const user = c.get('user')!;
   if (user.role !== 'admin') return c.text('Tidak diizinkan.', 403);
-  const participants = (await c.env.DB.prepare(`SELECT p.*,r.status registration_status,sfp.id social_proof_id,sfp.status social_proof_status,ap.id admission_proof_id,(SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' LIMIT 1) group_name FROM participants p LEFT JOIN registrations r ON r.participant_id=p.id LEFT JOIN social_follow_proofs sfp ON sfp.participant_id=p.id LEFT JOIN admission_proofs ap ON ap.participant_id=p.id ORDER BY p.created_at DESC LIMIT 500`).all<Record<string, unknown>>()).results;
+  const participants = (await c.env.DB.prepare(`SELECT p.*,
+    (SELECT r.status FROM registrations r JOIN event_editions e ON e.id=r.edition_id WHERE r.participant_id=p.id AND e.status='published' ORDER BY r.id DESC LIMIT 1) AS registration_status,
+    (SELECT ps.status FROM payment_submissions ps JOIN registrations r ON r.id=ps.registration_id JOIN event_editions e ON e.id=r.edition_id WHERE r.participant_id=p.id AND e.status='published' ORDER BY ps.id DESC LIMIT 1) AS payment_submission_status,
+    (SELECT pm.type FROM payment_submissions ps JOIN payment_methods pm ON pm.id=ps.payment_method_id JOIN registrations r ON r.id=ps.registration_id JOIN event_editions e ON e.id=r.edition_id WHERE r.participant_id=p.id AND e.status='published' ORDER BY ps.id DESC LIMIT 1) AS payment_type,
+    sfp.id social_proof_id,sfp.status social_proof_status,ap.id admission_proof_id,
+    (SELECT pg.name FROM participant_group_memberships pgm JOIN participant_groups pg ON pg.id=pgm.group_id JOIN event_editions e ON e.id=pgm.edition_id WHERE pgm.participant_id=p.id AND e.status='published' LIMIT 1) group_name
+    FROM participants p LEFT JOIN social_follow_proofs sfp ON sfp.participant_id=p.id LEFT JOIN admission_proofs ap ON ap.participant_id=p.id ORDER BY p.created_at DESC LIMIT 500`).all<Record<string, unknown>>()).results;
   return c.html(adminParticipantsPage(user, participants, c.req.query('message') ?? ''));
 });
 

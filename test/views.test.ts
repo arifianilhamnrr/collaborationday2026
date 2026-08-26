@@ -358,6 +358,24 @@ describe('admin dashboard pages', () => {
     expect(html).toContain('href="/dashboard/participants/export.csv"');
     expect(html).toContain('Export peserta confirmed');
   });
+
+  it('adds payment status filters and sorting to participant data', () => {
+    const html = adminParticipantsPage(admin, [
+      { id: 1, full_name: 'Ayu', email: 'ayu@example.com', phone: '+6281', gender: 'female', group_name: 'Orion', registration_status: 'confirmed', payment_submission_status: 'verified', payment_type: 'static_qris', created_at: '2026-08-26' },
+      { id: 2, full_name: 'Budi', email: 'budi@example.com', phone: '+6282', gender: 'male', group_name: 'Phoenix', registration_status: 'pending_payment', payment_submission_status: 'rejected', payment_type: 'bank_transfer', created_at: '2026-08-25' },
+    ]);
+
+    expect(html).toContain('data-client-table="participants"');
+    expect(html).toContain('data-table-filter data-field="paymentStatus"');
+    expect(html).toContain('<option value="confirmed">Terkonfirmasi</option>');
+    expect(html).toContain('<option value="rejected">Ditolak</option>');
+    expect(html).toContain('data-table-sort');
+    expect(html).toContain('<option value="group-asc">Kelompok A–Z</option>');
+    expect(html).toContain('data-payment-status="confirmed"');
+    expect(html).toContain('data-payment-status="rejected"');
+    expect(html).toContain('data-group="Orion"');
+    expect(html).toContain('<script src="/client-tables.js?v=20260827-filters" defer></script>');
+  });
 });
 
 describe('admin payment methods table', () => {
