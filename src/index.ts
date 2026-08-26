@@ -480,9 +480,21 @@ app.post('/dashboard/profile', async (c) => {
   const body = await c.req.parseBody();
   if (!csrfValid(c, body.csrf_token) || !user.email_verified_at || user.role !== 'participant') return c.text('Permintaan tidak valid.', 403);
   const fullName = String(body.full_name ?? '').trim();
-  const phone = normalizeIndonesianPhone(String(body.phone ?? ''));
+  const rawPhone = String(body.phone ?? '').trim();
+  const phone = normalizeIndonesianPhone(rawPhone);
   const gender = String(body.gender ?? '');
-  if (fullName.length < 2 || fullName.length > 100 || !phone || !['male', 'female'].includes(gender)) return c.text('Profil tidak valid.', 400);
+  if (fullName.length < 2 || fullName.length > 100) {
+    console.warn(`[participant-profile:validation] user=${user.id} field=name length=${fullName.length}`);
+    return c.text('Nama lengkap harus terdiri dari 2–100 karakter.', 400);
+  }
+  if (!['male', 'female'].includes(gender)) {
+    console.warn(`[participant-profile:validation] user=${user.id} field=gender selected=${Boolean(gender)}`);
+    return c.text('Pilih jenis kelamin sebelum menyimpan profil.', 400);
+  }
+  if (!phone) {
+    console.warn(`[participant-profile:validation] user=${user.id} field=phone digits=${rawPhone.replace(/\D/g, '').length}`);
+    return c.text('Nomor WhatsApp tidak valid. Gunakan format 08xxxxxxxxxx atau +628xxxxxxxxxx.', 400);
+  }
   const existing = await c.env.DB.prepare(`SELECT p.id,p.phone,p.gender,p.whatsapp_verified_at,
     EXISTS(SELECT 1 FROM participant_group_memberships WHERE participant_id=p.id) AS has_membership
     FROM participants p WHERE p.user_id=?`).bind(user.id).first<{ id: number; phone: string; gender: string | null; whatsapp_verified_at: string | null; has_membership: number }>();

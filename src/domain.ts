@@ -12,8 +12,16 @@ export function validEmail(value: string): boolean {
 }
 
 export function normalizeIndonesianPhone(value: string): string | null {
-  const digits = value.replace(/\D/g, '');
-  const normalized = digits.startsWith('0') ? `62${digits.slice(1)}` : digits.startsWith('62') ? digits : '';
+  const digits = value.replace(/\D/g, '').replace(/^0062/, '62');
+  const normalized = digits.startsWith('6208')
+    ? `62${digits.slice(3)}`
+    : digits.startsWith('08')
+      ? `62${digits.slice(1)}`
+      : digits.startsWith('8')
+        ? `62${digits}`
+        : digits.startsWith('62')
+          ? digits
+          : '';
   return /^628\d{8,11}$/.test(normalized) ? `+${normalized}` : null;
 }
 

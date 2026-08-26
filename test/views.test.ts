@@ -82,6 +82,7 @@ describe('participant dashboard', () => {
     expect(html).toContain('name="gender" required');
     expect(html).toContain('value="male"');
     expect(html).toContain('value="female"');
+    expect(html).toContain('Nomor dapat ditulis sebagai 08xxxxxxxxxx atau +628xxxxxxxxxx.');
     expect(html).toContain('action="/dashboard/profile"');
     expect(html).toContain('style="display:flex;align-items:flex-start;gap:10px"');
     expect(html).toContain('<span>Saya menyetujui dokumentasi kegiatan sesuai kebijakan publikasi.</span>');

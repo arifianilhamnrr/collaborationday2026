@@ -38,6 +38,9 @@ describe('domain utilities', () => {
   it('normalizes Indonesian WhatsApp numbers to E.164', () => {
     expect(normalizeIndonesianPhone('0812-3456-7890')).toBe('+6281234567890');
     expect(normalizeIndonesianPhone('+62 812 3456 7890')).toBe('+6281234567890');
+    expect(normalizeIndonesianPhone('812 3456 7890')).toBe('+6281234567890');
+    expect(normalizeIndonesianPhone('+62 0812 3456 7890')).toBe('+6281234567890');
+    expect(normalizeIndonesianPhone('0062 812 3456 7890')).toBe('+6281234567890');
     expect(normalizeIndonesianPhone('123')).toBeNull();
   });
 
