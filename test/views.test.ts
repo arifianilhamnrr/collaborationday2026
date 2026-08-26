@@ -478,7 +478,7 @@ describe('staff workspaces', () => {
       { user_id: 2, role: 'pendamping', full_name: 'Kak Dita', phone_e164: '+6281234567890', whatsapp_verified_at: '2026-08-16' },
       { id: 4, name: 'Kelompok Algo', whatsapp_invite_url: null },
       [{ full_name: 'Ayu', phone: '+6281', social_proof_id: 8, social_proof_status: 'pending' }],
-      [{ id: 9, full_name: 'Ayu', public_id: 'CD2026-A', amount_due: 120000, amount_paid: 40000, last_timing: 'event' }],
+      [{ id: 9, full_name: 'Ayu', phone: '+6281', public_id: 'CD2026-A', amount_due: 120000, amount_paid: 40000, last_timing: 'event' }],
     );
 
     expect(html).toContain('action="/dashboard/social-proofs/8/review"');
@@ -489,6 +489,8 @@ describe('staff workspaces', () => {
     expect(html).toContain('https://wa.me/6281?text=');
     expect(html).toContain('WhatsApp peserta');
     expect(html).toContain(`text=${encodeURIComponent('Halo Ayu, saya Kak Dita, pendamping Kelompok Algo. Saya menghubungi terkait kegiatan Collaboration Day.')}`);
+    expect(html).toContain('<th>Catat penerimaan</th><th>Kontak</th>');
+    expect(html).toContain(`text=${encodeURIComponent('Halo Ayu, saya Kak Dita, pendamping Kelompok Algo. Saya menghubungi terkait pengajuan pembayaran tunai Collaboration Day (CD2026-A).')}`);
   });
 
   it('shows a safe fallback when a participant has no WhatsApp number', () => {
